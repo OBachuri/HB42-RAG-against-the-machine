@@ -1,0 +1,56 @@
+.ONESHELL:
+SHELL := /bin/bash
+
+
+RM = rm -fr
+
+VENV_DIR := .cmm-venv
+PYTHON := python3
+PIP := pip
+C_DIR := pwd
+
+
+UV := $(shell command -v uv 2>/dev/null)
+# ARGS := $(wordlist 2, 999, $(MAKECMDGOALS))
+
+
+install:
+#	mkdir -p .cache/uv_cache .cache/hf_cache
+#	UV_CACHE_DIR=.cache/uv_cache \ 
+#	HF_HOME=.cache/hf_cache \ 
+
+	uv sync --python 3
+
+run:
+	uv run python -m src $(ARGS)
+
+
+
+clean:
+	@$(RM) .mypy_cache
+	@$(RM) __pycache__
+	find . -type d -name __pycache__ -exec rm -rf {} +
+	find . -type d -name .mypy_cache -exec rm -rf {} +
+	find . -type d -name "*.egg-info" -exec rm -rf {} +
+	find . -name .pytest_cache -exec rm -rf {} +
+	find . -name .ruff_cache -exec rm -rf {} +
+	find . -name "*.pyc" -delete
+	find . -name "*.pyo" -delete
+
+lint:
+	uv run flake8 src/*.py
+	uv run mypy src/ --warn-return-any \
+	--warn-unused-ignores \
+	--ignore-missing-imports \
+	--disallow-untyped-defs \
+	--check-untyped-defs \
+	--follow-imports=silent
+
+lint-strict: 
+	uv run flake8 src/*.py
+	uv run mypy src/ --strict --follow-imports=silent
+
+
+.PHONY: install, run, debug, clean, lint, lint-strict
+
+#  ln -s ~/goinfre/uv uv
