@@ -11,6 +11,8 @@ C_DIR := pwd
 
 
 UV := $(shell command -v uv 2>/dev/null)
+
+ARGS := "index --max_chunk_size 2000"
 # ARGS := $(wordlist 2, 999, $(MAKECMDGOALS))
 
 

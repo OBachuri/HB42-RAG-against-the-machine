@@ -42,7 +42,19 @@ uv run python
 
 ## Algorithm and implementation
 
-### In general, the LLM generation process includes the following steps:
+### System architecture
+
+### Chunking strategy
+
+### Retrieval method
+
+### Performance analysis
+
+### Design decisions
+
+### Challenges faced
+
+### Example usage
 
 
 ### AI Usage
