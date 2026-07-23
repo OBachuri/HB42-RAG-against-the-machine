@@ -12,7 +12,8 @@ C_DIR := pwd
 
 UV := $(shell command -v uv 2>/dev/null)
 
-ARGS := "index --max_chunk_size 2000"
+ACOMMAND := index
+ARGS := --max_chunk_size 2000
 # ARGS := $(wordlist 2, 999, $(MAKECMDGOALS))
 
 
@@ -24,7 +25,7 @@ install:
 	uv sync --python 3
 
 run:
-	uv run python -m src $(ARGS)
+	uv run python -m src $(ACOMMAND) $(ARGS)
 
 
 

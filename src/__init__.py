@@ -1,3 +1,5 @@
+"""RAG against the machine."""
+
 __version__ = "0.1.0"
 
 __author__ = "Oleksandr Bachurin"

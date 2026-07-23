@@ -27,10 +27,18 @@ make install
 make run
 ```
 
-Run with custom paths:
+Usage:
 ```bash
-uv run python 
+# Index the repository
+uv run python -m src index --max_chunk_size=2000
+
+# Search a single query
+uv run python -m src search "How to configure OpenAI server?" --k=10
+
+# Answer a single question
+uv run python -m src answer "How to configure OpenAI server?" --k=10
 ```
+
 
 ## Resources
 

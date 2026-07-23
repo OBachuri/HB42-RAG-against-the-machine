@@ -27,6 +27,13 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "--max_overlap",
+        default=10,
+        help="Max %% of overlap for chunks ",
+        type=int,
+    )
+
+    parser.add_argument(
         "--data_raw_path",
         default="data/raw/",
         help="Path to directory with data for index",
