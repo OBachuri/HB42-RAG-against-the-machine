@@ -1,6 +1,8 @@
 import argparse
 import os
 import sys
+import time
+
 
 # path_to_file = os.path.dirname(__file__)
 # sys.path.append(path_to_file)
@@ -21,14 +23,21 @@ def main() -> None:
 
     parser.add_argument(
         "--max_chunk_size",
-        default=500,
+        default=2000,
         help="Max size of a chunk",
         type=int,
     )
 
     parser.add_argument(
+        "--min_chunk_size",
+        default=200,
+        help="Min size of a chunk",
+        type=int,
+    )
+
+    parser.add_argument(
         "--max_overlap",
-        default=10,
+        default=15,
         help="Max %% of overlap for chunks ",
         type=int,
     )
@@ -89,10 +98,20 @@ def main() -> None:
               file=sys.stderr)
         sys.exit(1)
 
-    if (param.max_chunk_size < 100):
+    if (param.max_chunk_size < 200):
         print(f"!!! max_chunk_size to small ({param.max_chunk_size}). "
-              "Will be used max_chunk_size = 100")
-        param.max_chunk_size = 100
+              "Will be used max_chunk_size = 200")
+        param.max_chunk_size = 200
+
+    if (param.min_chunk_size < 100):
+        print(f"!!! min_chunk_size to small ({param.max_chunk_size}). "
+              "Will be used min_chunk_size = 100")
+        param.min_chunk_size = 100
+
+    if (param.min_chunk_size >= param.max_chunk_size):
+        print("!!! min_chunk_size must be smaller than max_chunk_size. "
+              "Will be used min_chunk_size = 100")
+        param.min_chunk_size = 100
 
     # if not os.path.exists(param.functions_definition):
     #     print(f"File not found: '{param.functions_definition}'",
@@ -107,7 +126,18 @@ def main() -> None:
     print(param)
     print("-"*20)
 
+    # Record start time
+    start_time = time.perf_counter()
+
     r_index(param)
+
+    # Record end time
+    end_time = time.perf_counter()
+
+    # Calculate duration
+    duration = int(end_time - start_time)
+    print(f"Execution time: {duration // 60}:{duration % 60}"
+          " (minutes:seconds)")
 
 
 if __name__ == "__main__":
