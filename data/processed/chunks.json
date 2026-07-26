@@ -1,0 +1,25 @@
+[
+  [
+    {
+      "file_path": "/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py",
+      "first_character_index": 0,
+      "last_character_index": 1973,
+      "id": 1,
+      "parent_id": 0
+    },
+    {
+      "file_path": "/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py",
+      "first_character_index": 1973,
+      "last_character_index": 3855,
+      "id": 2,
+      "parent_id": 0
+    },
+    {
+      "file_path": "/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py",
+      "first_character_index": 3855,
+      "last_character_index": 4458,
+      "id": 3,
+      "parent_id": 0
+    }
+  ]
+]

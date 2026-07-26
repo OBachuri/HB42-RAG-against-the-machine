@@ -39,6 +39,13 @@ clean:
 	find . -name .ruff_cache -exec rm -rf {} +
 	find . -name "*.pyc" -delete
 	find . -name "*.pyo" -delete
+	@$(RM) data/cache/
+
+fclean: clean
+	@$(RM) .cache
+	@$(RM) .venv
+	@$(RM) data/processed/
+	@$(RM) data/output/
 
 lint:
 	uv run flake8 src/*.py
@@ -54,6 +61,6 @@ lint-strict:
 	uv run mypy src/ --strict --follow-imports=silent
 
 
-.PHONY: install, run, debug, clean, lint, lint-strict
+.PHONY: install, run, debug, clean, lint, lint-strict fclean
 
 #  ln -s ~/goinfre/uv uv

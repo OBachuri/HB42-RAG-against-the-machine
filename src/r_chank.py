@@ -1,17 +1,24 @@
 import ast
 import argparse
 import sys
+import json
 from pathlib import Path
+
+from pydantic import RootModel
+
 
 from src.r_data_model import MinimalSource
 
 _TEXT_SEPARATORS: dict[str, list[str]] = {
     ".txt":  ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ",],
     ".html": ["</table>", "</div>", "</section>", "</p>",
-              "<br>", "</br>", "\n\n", "\n", " "],
+              "<br>", "</br>", "\n\n",
+              ". ", "! ", "? ", "; ", ", ", "\n", " "],
     ".htm":  ["</table>", "</div>", "</section>", "</p>",
-              "<br>", "</br>", "\n\n", "\n", " "],
-    ".py":   ["class ", "def ", "\n\n", "\n", ";", " "],
+              "<br>", "</br>", "\n\n",
+              ". ", "! ", "? ", "; ", ", ", "\n", " "],
+    ".py":   ["\nclass ", "class ", "def ", "while ", "\n\n",
+              "for ", "if ", "\n", ";", " "],
     ".md":   ["\n# ", "\n## ", "\n### ", "\n#### ", "\n##### ",
               "\n\n", "\n", ". ", "; ", ", ", " ",],
     ".toml": ["\n[", "\n\n", "\n", " "],
@@ -40,6 +47,7 @@ def get_all_file_paths(directory_path: str | Path) -> list[Path]:
 
 
 def should_index(file: str) -> bool:
+    """  Check if file contains text data and must be indexed """
 
     try:
         with open(file, "rb") as f:
@@ -48,7 +56,7 @@ def should_index(file: str) -> bool:
         print(f"Error: can't read file {file} \n({ex})", file=sys.stderr)
         return False
 
-    if not sample:  # skip empty files
+    if not sample:        # skip empty files
         return False
 
     if b"\x00" in sample:
@@ -74,15 +82,18 @@ def r_get_end_line(start: int, line_offsets: list[int],
     return rez
 
 
-def r_chank_txt(file: str,
+def r_chunk_txt(file: str,
                 param: argparse.Namespace,
                 source: str = "",
-                shift: int = 0) -> list[MinimalSource]:
+                shift: int = 0,
+                id: int = 0,
+                txt_separatos: list[str] = []
+                ) -> list[MinimalSource]:
     """ Chunk plain text files """
 
     start_char = 0
     end_char = 0
-    chanks: list[MinimalSource] = []
+    chunks: list[MinimalSource] = []
 
     if not source or not source.strip():
         try:
@@ -91,27 +102,32 @@ def r_chank_txt(file: str,
         except Exception as ex:
             print(f"Error: can't read file {file} \n({ex})", file=sys.stderr)
             return []
+        id = 0
 
     # print("---txt--parce  -- source len", len(source))
 
     if len(source) <= param.max_chunk_size:
         return [MinimalSource(file_path=file,
                               first_character_index=start_char + shift,
-                              last_character_index=(shift + len(source)-1))]
+                              last_character_index=(shift + len(source)-1),
+                              id=id)]
 
-    extension = Path(file).suffix.lower()
-    txt_separatos = _TEXT_SEPARATORS.get(
-        extension, _DEFAULT_SEPARATORS)
+    if len(txt_separatos) < 1:
+        extension = Path(file).suffix.lower()
+        txt_separatos = _TEXT_SEPARATORS.get(
+            extension, _DEFAULT_SEPARATORS)
 
     end_char = len(source)-1
 
     while start_char < end_char:
+        id += 1
         if end_char - start_char < param.max_chunk_size:
             if end_char - start_char >= param.min_chunk_size:
-                chanks.append(
+                chunks.append(
                     MinimalSource(file_path=file,
                                   first_character_index=start_char + shift,
-                                  last_character_index=end_char + shift))
+                                  last_character_index=end_char + shift,
+                                  id=id))
             else:
                 end_c = end_char - param.min_chunk_size
                 start_char = end_c - min(
@@ -126,15 +142,16 @@ def r_chank_txt(file: str,
                     start_char = end_char - param.min_chunk_size
                 else:
                     start_char = index
-                chanks.append(
+                chunks.append(
                     MinimalSource(file_path=file,
                                   first_character_index=start_char + shift,
-                                  last_character_index=end_char + shift))
+                                  last_character_index=end_char + shift,
+                                  id=id))
 
             # print("-- start:", start_char, "end:", end_char, "len:", 1 + end_char - start_char)
             #  print(source[start_char:end_char])
 
-            return chanks
+            return chunks
 
         end_c = min(start_char + param.max_chunk_size, end_char)
         index = 0
@@ -147,28 +164,29 @@ def r_chank_txt(file: str,
                 break
         if (index <= 0) or ((index - start_char) < param.min_chunk_size):
             index = end_c
-        chanks.append(
+        chunks.append(
             MinimalSource(file_path=file,
                           first_character_index=start_char + shift,
-                          last_character_index=index + shift))
+                          last_character_index=index + shift,
+                          id=id))
         # print("-- start:", start_char, "index:", index, "len:", index + 1 - start_char)
         # print(source[start_char:index])
 
         start_char = index
 
-    return chanks
+    return chunks
 
 
-def r_chank_py(file: str,
+def r_chunk_py(file: str,
                param: argparse.Namespace,
-               source: str = "") -> list[MinimalSource]:
+               source: str = "", id: int = 0) -> list[MinimalSource]:
     """ Chunk Python files """
 
     start_char = 0
     end_char = 0
     start_line = 0
     end_line = 0
-    chanks: list[MinimalSource] = []
+    chunks: list[MinimalSource] = []
 
     print("---f:", file)
 
@@ -179,18 +197,19 @@ def r_chank_py(file: str,
         except Exception as ex:
             print(f"Error: can't read file {file} \n({ex})", file=sys.stderr)
             return []
+        id = 0
 
     try:
         tree = ast.parse(source)
     except Exception as ex:
         print(f"Warning: can't parse file {file} \n({ex}) as python code",
               file=sys.stderr)
-        return r_chank_txt(file, param, source=source)
+        return r_chunk_txt(file, param, source=source)
 
     if len(source) <= param.max_chunk_size:
         return [MinimalSource(file_path=file,
                               first_character_index=start_char,
-                              last_character_index=(len(source)-1))]
+                              last_character_index=(len(source)-1), id=id)]
 
     top_level = [
         node for node in ast.walk(tree)
@@ -204,6 +223,7 @@ def r_chank_py(file: str,
     ]
 
     top_level.sort(key=lambda node: node.lineno)
+    curr_level = 0
 
     lines = source.splitlines(keepends=True)
     line_offsets: list[int] = []
@@ -215,11 +235,53 @@ def r_chank_py(file: str,
         offset += len(line)
         i += 1
 
+    curr_level
+
     while start_line < len(lines):
+        top_line_numb = top_level[curr_level].lineno - 1
+        top_line_offset = line_offsets[top_line_numb]
+        top_line_len = len(lines[top_line_numb])
+        end_line_numb = top_level[curr_level].end_lineno
+        if end_line_numb is None:
+            end_line_numb = len(lines)-1
+        else:
+            end_line_numb -= 1
+        end_line_offset = line_offsets[end_line_numb]
+        end_line_len = len(lines[end_line_numb])
+
+
+        if ((line_offsets[start_line] + param.max_chunk_size)
+           < (top_line_offset + top_line_len + param.min_chunk_size)):
+            chunks.extend(r_chunk_txt(file, param,
+                                      source=source[line_offsets[start_line]:top_line_offset],
+                                      shift=line_offsets[start_line],
+                                      id=id,
+                                      txt_separatos=_DEFAULT_SEPARATORS))
+            id = chunks[-1].id + 1
+            start_line = top_line_numb
+
+
+        if ((end_line_offset + end_line_len - line_offsets[start_line]) <= param.max_chunk_size
+           and (end_line_offset + end_line_len - line_offsets[start_line]) >= param.min_chunk_size):
+
+            chunks.append(
+                MinimalSource(file_path=file,
+                              first_character_index=start_char,
+                              last_character_index=(
+                                  end_line_offset + end_line_len
+                                  - line_offsets[start_line]),
+                              id=id)
+                          )
+            id += 1
+            start_line = end_line_numb
+
         if len(lines[start_line]) > param.max_chunk_size:
-            chanks.extend(r_chank_txt(file, param,
+            chunks.extend(r_chunk_txt(file, param,
                                       source=lines[start_line],
-                                      shift=line_offsets[start_line]))
+                                      shift=line_offsets[start_line],
+                                      id=id))
+            id = chunks[-1].id
+            start_line += 1
         else:
             end_line = r_get_end_line(start_char, line_offsets,
                                       max_offset=param.max_chunk_size,
@@ -239,39 +301,65 @@ def r_chank_py(file: str,
                   node.end_lineno,
                   node.end_col_offset,
                   node.name, type(parent).__name__ if parent else None)
-    return chanks
+    return chunks
 
 
 def r_index(param: argparse.Namespace) -> None:
-    print("---index---")
+    print("---chunk---")
 
     i = 1
-    chanks: list[MinimalSource] = []
+    chunks: list[MinimalSource] = []
     for f_ in get_all_file_paths(param.data_raw_path):
         extension = f_.suffix
         size_in_bytes = f_.stat().st_size
         if extension == '.py':
-            print(f"{i:4} chank py:", size_in_bytes, f_)
-            # chanks.extend(r_chank_py(str(f_), param))
+            print(f"{i:4} chunk py:", size_in_bytes, f_)
+            # chunks.extend(r_chunk_py(str(f_), param))
         elif extension in _TEXT_SEPARATORS.keys():
-            print(f"{i:4} chank txt:", size_in_bytes, f_)
-            chanks.extend(r_chank_txt(str(f_), param))
+            print(f"{i:4} chunk txt:", size_in_bytes, f_)
+            chunks.extend(r_chunk_txt(str(f_), param))
         elif should_index(str(f_)):
-            print(f"{i:4} chank as txt:", size_in_bytes, f_)
-            chanks.extend(r_chank_txt(str(f_), param))
+            print(f"{i:4} chunk as txt:", size_in_bytes, f_)
+            chunks.extend(r_chunk_txt(str(f_), param))
         else:
             print(f"{i:4} skip:", size_in_bytes, f_)
         i += 1
 
     # print("-"*20)
-    # r_chank_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/offline_inference/basic/chat.py", param)
+    # r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/offline_inference/basic/chat.py", param)
     print("-"*20)
-    chanks = r_chank_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py", param)
+    # chunks = r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py", param)
     # print("-"*30, " txt")
-    # # chank = r_chank_txt("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/LICENSE", param)
-    # # print(chank)
+    # # chunks = r_chunk_txt("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/LICENSE", param)
+    # # print(chunks)
     # # print("-"*30, " txt")
-    # # chanks = r_chank_txt("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/format.sh", param)
-    # # print(chank)
-    # chank = r_chank_txt("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py", param)
-    print(chanks)
+    # # chunks = r_chunk_txt("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/format.sh", param)
+    # # print(chunk)
+    chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py", param)]
+
+    print(chunks)
+
+    if chunks:
+        # Write chunks to json file:  data/processed/chunks.json
+        file_path = Path(str(param.data_processed_path)) / Path("chunks.json")
+
+        try:
+            # This creates the folders if they do not exist
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as ex:
+            print("Error: can't create folder to store chunks.json! \n",
+                  ex, file=sys.stderr)
+            sys.exit(1)
+
+        json_string = RootModel(chunks).model_dump_json(indent=2)
+
+        try:
+            # Writing the list of chunks to a JSON file
+            with open(file_path, "w", encoding="utf-8") as chunk_file:
+                chunk_file.write(json_string)
+        except Exception as ex:
+            print(f"Error: can't store chunks.json! ({file_path})\n",
+                  ex, file=sys.stderr)
+            sys.exit(1)
+
+    print("---index---")

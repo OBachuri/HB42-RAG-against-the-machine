@@ -54,6 +54,8 @@ uv run python -m src answer "How to configure OpenAI server?" --k=10
 
 ### Chunking strategy
 
+
+
 ### Retrieval method
 
 ### Performance analysis

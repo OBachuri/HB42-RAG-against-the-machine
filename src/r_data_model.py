@@ -6,6 +6,8 @@ class MinimalSource(BaseModel):
     file_path: str
     first_character_index: int
     last_character_index: int
+    id: int = 0
+    parent_id: int = 0
 
 
 class UnansweredQuestion(BaseModel):
