@@ -7,7 +7,7 @@ import time
 # path_to_file = os.path.dirname(__file__)
 # sys.path.append(path_to_file)
 
-from src.r_chank import r_index
+from src.r_chunk import r_index
 
 
 commands = {"index": "a_iii"}
