@@ -80,7 +80,7 @@ def _should_skip(path: Path) -> bool:
 def get_all_file_paths(directory_path: str | Path) -> list[Path]:
     base_dir = Path(directory_path).resolve()
     return [
-        file for file in base_dir.rglob("*")
+        file.relative_to(base_dir) for file in base_dir.rglob("*")
         if file.is_file() and not _should_skip(file)]
 
 
@@ -124,7 +124,7 @@ def r_chunk_txt(file: str,
                 param: argparse.Namespace,
                 source: str = "",
                 shift: int = 0,
-                chunk_id: int = 0,
+                chunk_id: int = 1,
                 txt_separatos: list[str] = [],
                 parent_id: int = 0
                 ) -> list[MinimalSource]:
@@ -136,12 +136,12 @@ def r_chunk_txt(file: str,
 
     if not source:   # or not source.strip():
         try:
-            with open(file) as f:
+            f_path = Path(param.data_raw_path).resolve() / file
+            with open(f_path) as f:
                 source = f.read()
             chunk_id = 0
-            # print("---- read from file")
         except Exception as ex:
-            print(f"Error: can't read file {file} \n({ex})", file=sys.stderr)
+            print(f"Error: can't read file '{file}' \n({ex})", file=sys.stderr)
             return []
 
     # print("---txt--parce  -- source len", len(source), "chunk_id:", chunk_id)
@@ -227,7 +227,7 @@ def r_chunk_txt(file: str,
 
 def r_chunk_py(file: str,
                param: argparse.Namespace,
-               source: str = "", chunk_id: int = 0) -> list[MinimalSource]:
+               source: str = "", chunk_id: int = 1) -> list[MinimalSource]:
     """ Chunk Python files """
 
     start_char = 0
@@ -240,7 +240,8 @@ def r_chunk_py(file: str,
 
     if not source or not source.strip():
         try:
-            with open(file) as f:
+            f_path = Path(param.data_raw_path) / file
+            with open(f_path) as f:
                 source = f.read()
         except Exception as ex:
             print(f"Error: can't read file {file} \n({ex})", file=sys.stderr)
@@ -281,12 +282,12 @@ def r_chunk_py(file: str,
     lines = source.splitlines(keepends=True)
     line_offsets: list[int] = []
     offset = 0
-    i = 0
+    # i = 0
     for line in lines:
         line_offsets.append(offset)
         # print("l-", i, "-", offset, ":", lines[i], end="")
         offset += len(line)
-        i += 1
+        # i += 1
 
     parent_id = 0
     while start_line < len(lines) and chunk_id < 5000:
@@ -299,6 +300,28 @@ def r_chunk_py(file: str,
                 chunk_id=chunk_id,
                 parent_id=parent_id))
             break
+
+        # find     curr_object
+        if curr_object < len(top_level):
+            end_line_numb = top_level[curr_object].end_lineno
+            if end_line_numb is None:
+                end_line_numb = len(lines)-1
+            else:
+                end_line_numb -= 1
+            end_line_end_offset = (line_offsets[end_line_numb]
+                                   + len(lines[end_line_numb]))
+
+        while (curr_object < len(top_level)
+               and start_char > end_line_end_offset):
+            curr_object += 1
+            if curr_object < len(top_level):
+                end_line_numb = top_level[curr_object].end_lineno
+                if end_line_numb is None:
+                    end_line_numb = len(lines)-1
+                else:
+                    end_line_numb -= 1
+                end_line_end_offset = (line_offsets[end_line_numb]
+                                       + len(lines[end_line_numb]))
 
         if curr_object >= len(top_level):
             # end of object but not end of file
@@ -400,7 +423,7 @@ def r_chunk_py(file: str,
 
         start_char = line_offsets[end_line_numb] + len(lines[end_line_numb]) + 1
         start_line = end_line_numb + 1
-    #     print("end_line:", end_line_numb, "id:", chunk_id, "next_char:",start_char)
+        # print("end_line:", end_line_numb, "id:", chunk_id, "next_char:", start_char, "obj:", curr_object)
 
     # print("Top:", top_level)
 
@@ -427,23 +450,26 @@ def r_chunk_py(file: str,
 def r_index(param: argparse.Namespace) -> None:
     print("---chunk---")
 
-    i = 1
+    # i = 1
     chunks: list[MinimalSource] = []
     for f_ in get_all_file_paths(param.data_raw_path):
         extension = f_.suffix
         # size_in_bytes = f_.stat().st_size
         if extension == '.py':
             # print(f"{i:4} chunk py:", size_in_bytes, f_)
+            # c_ = r_chunk_py(str(f_), param)
+            # print(len(c_))
+            # chunks.extend(c_)
             chunks.extend(r_chunk_py(str(f_), param))
         elif extension in _TEXT_SEPARATORS.keys():
             # print(f"{i:4} chunk txt:", size_in_bytes, f_)
             chunks.extend(r_chunk_txt(str(f_), param))
-        elif should_index(str(f_)):
+        elif should_index(str(Path(param.data_raw_path) / f_)):
             # print(f"{i:4} chunk as txt:", size_in_bytes, f_)
             chunks.extend(r_chunk_txt(str(f_), param))
         # else:
         #     print(f"{i:4} skip:", size_in_bytes, f_)
-        i += 1
+        # i += 1
 
     # print("-"*20)
     # r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/offline_inference/basic/chat.py", param)
@@ -456,6 +482,7 @@ def r_index(param: argparse.Namespace) -> None:
     # # chunks = r_chunk_txt("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/format.sh", param)
     # # print(chunk)
     # chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py", param)]
+    # chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/offline_inference/basic/chat.py", param)]
 
     # print(chunks)
 
