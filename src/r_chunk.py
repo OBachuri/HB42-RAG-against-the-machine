@@ -124,8 +124,9 @@ def r_chunk_txt(file: str,
                 param: argparse.Namespace,
                 source: str = "",
                 shift: int = 0,
-                id: int = 0,
-                txt_separatos: list[str] = []
+                chunk_id: int = 0,
+                txt_separatos: list[str] = [],
+                parent_id: int = 0
                 ) -> list[MinimalSource]:
     """ Chunk plain text files """
 
@@ -133,22 +134,25 @@ def r_chunk_txt(file: str,
     end_char = 0
     chunks: list[MinimalSource] = []
 
-    if not source or not source.strip():
+    if not source:   # or not source.strip():
         try:
             with open(file) as f:
                 source = f.read()
+            chunk_id = 0
+            # print("---- read from file")
         except Exception as ex:
             print(f"Error: can't read file {file} \n({ex})", file=sys.stderr)
             return []
-        id = 0
 
-    # print("---txt--parce  -- source len", len(source))
+    # print("---txt--parce  -- source len", len(source), "chunk_id:", chunk_id)
+    # print("source:", source)
 
     if len(source) <= param.max_chunk_size:
         return [MinimalSource(file_path=file,
                               first_character_index=start_char + shift,
                               last_character_index=(shift + len(source)-1),
-                              id=id)]
+                              parent_id=parent_id,
+                              chunk_id=chunk_id)]
 
     if len(txt_separatos) < 1:
         extension = Path(file).suffix.lower()
@@ -156,16 +160,18 @@ def r_chunk_txt(file: str,
             extension, _DEFAULT_SEPARATORS)
 
     end_char = len(source)-1
+    chunk_id -= 1
 
     while start_char < end_char:
-        id += 1
+        chunk_id += 1
         if end_char - start_char < param.max_chunk_size:
             if end_char - start_char >= param.min_chunk_size:
                 chunks.append(
                     MinimalSource(file_path=file,
                                   first_character_index=start_char + shift,
                                   last_character_index=end_char + shift,
-                                  id=id))
+                                  parent_id=parent_id,
+                                  chunk_id=chunk_id))
             else:
                 end_c = end_char - param.min_chunk_size
                 start_char = end_c - min(
@@ -184,9 +190,11 @@ def r_chunk_txt(file: str,
                     MinimalSource(file_path=file,
                                   first_character_index=start_char + shift,
                                   last_character_index=end_char + shift,
-                                  id=id))
+                                  parent_id=parent_id,
+                                  chunk_id=chunk_id))
 
-            # print("-- start:", start_char, "end:", end_char, "len:", 1 + end_char - start_char)
+            # print("-- start:", start_char, "end:",
+            # end_char, "len:", 1 + end_char - start_char)
             #  print(source[start_char:end_char])
 
             return chunks
@@ -206,8 +214,10 @@ def r_chunk_txt(file: str,
             MinimalSource(file_path=file,
                           first_character_index=start_char + shift,
                           last_character_index=index + shift,
-                          id=id))
-        # print("-- start:", start_char, "index:", index, "len:", index + 1 - start_char)
+                          parent_id=parent_id,
+                          chunk_id=chunk_id))
+        # print("-- start:", start_char, "index:",
+        # index, "len:", index + 1 - start_char)
         # print(source[start_char:index])
 
         start_char = index
@@ -217,7 +227,7 @@ def r_chunk_txt(file: str,
 
 def r_chunk_py(file: str,
                param: argparse.Namespace,
-               source: str = "", id: int = 0) -> list[MinimalSource]:
+               source: str = "", chunk_id: int = 0) -> list[MinimalSource]:
     """ Chunk Python files """
 
     start_char = 0
@@ -226,7 +236,7 @@ def r_chunk_py(file: str,
     end_line = 0
     chunks: list[MinimalSource] = []
 
-    print("--py-file:", file)
+    # print("--py-file:", file)
 
     if not source or not source.strip():
         try:
@@ -235,7 +245,7 @@ def r_chunk_py(file: str,
         except Exception as ex:
             print(f"Error: can't read file {file} \n({ex})", file=sys.stderr)
             return []
-        id = 0
+        chunk_id = 0
 
     try:
         tree = ast.parse(source)
@@ -247,7 +257,8 @@ def r_chunk_py(file: str,
     if len(source) <= param.max_chunk_size:
         return [MinimalSource(file_path=file,
                               first_character_index=start_char,
-                              last_character_index=(len(source)-1), id=id)]
+                              last_character_index=(len(source)-1),
+                              chunk_id=chunk_id)]
 
     top_level = [
         node for node in ast.walk(tree)
@@ -273,12 +284,31 @@ def r_chunk_py(file: str,
     i = 0
     for line in lines:
         line_offsets.append(offset)
-        print("l-", i, "-", offset, ":", lines[i], end="")
+        # print("l-", i, "-", offset, ":", lines[i], end="")
         offset += len(line)
         i += 1
 
     parent_id = 0
-    while start_line < len(lines) and id < 1000:
+    while start_line < len(lines) and chunk_id < 5000:
+        if len(source) - start_char < param.max_chunk_size:
+            # end of file
+            chunks.append(MinimalSource(
+                file_path=file,
+                first_character_index=start_char,
+                last_character_index=(len(source)-1),
+                chunk_id=chunk_id,
+                parent_id=parent_id))
+            break
+
+        if curr_object >= len(top_level):
+            # end of object but not end of file
+            # parce as text
+            chunks.extend(r_chunk_txt(file, param,
+                                      source=source[start_char:],
+                                      shift=start_char,
+                                      chunk_id=chunk_id))
+            break
+
         top_line_numb = top_level[curr_object].lineno - 1
         top_line_offset = line_offsets[top_line_numb]
         top_line_len = len(lines[top_line_numb])
@@ -290,27 +320,24 @@ def r_chunk_py(file: str,
         end_line_offset = line_offsets[end_line_numb]
         end_line_len = len(lines[end_line_numb])
 
-        if ((line_offsets[start_line] + param.max_chunk_size)
+        if ((start_char + param.max_chunk_size)
            < (top_line_offset + top_line_len + param.min_chunk_size)):
             # add text before object start
             chunks.extend(r_chunk_txt(file, param,
                                       source=source[
-                                          line_offsets[start_line]:
+                                          start_char:
                                           top_line_offset],
-                                      shift=line_offsets[start_line],
-                                      id=id,
+                                      shift=start_char,
+                                      chunk_id=chunk_id,
                                       txt_separatos=_DEFAULT_SEPARATORS))
-            id = chunks[-1].id + 1
+            chunk_id = chunks[-1].chunk_id + 1
             start_line = top_line_numb
-
-        # if ((end_line_offset + end_line_len - line_offsets[start_line])
-        # <= param.max_chunk_size
-        #    and (end_line_offset + end_line_len - line_offsets[start_line])
-        # >= param.min_chunk_size):
+            start_char = top_line_offset
+            # print("-- text_before_new_id", chunk_id, "next_char", start_char)
 
         if (end_line_offset + end_line_len
-           - line_offsets[start_line]) <= param.max_chunk_size:
-            # Current object end in one chunk
+           - start_char) <= param.max_chunk_size:
+            # Current object end in current chunk
             # Check if there could be another one that ends there
             end_ = end_line_offset + end_line_len
             for i in range(curr_object + 1, len(top_level)):
@@ -333,38 +360,62 @@ def r_chunk_py(file: str,
                 MinimalSource(file_path=file,
                               first_character_index=start_char,
                               last_character_index=end_,
-                              id=id,
+                              chunk_id=chunk_id,
                               parent_id=parent_id)
                           )
-            print("---the end of object: chunk id = ", id, "start_char:", start_char,"end_line", end_line_numb)
-            id += 1
+            # print("---the end of object: chunk id = ", chunk_id,
+            #       "start_char:", start_char,"end_line", end_line_numb)
 
-        elif len(lines[start_line]) > param.max_chunk_size:
-            chunks.extend(r_chunk_txt(file, param,
-                                      source=lines[start_line],
-                                      shift=line_offsets[start_line],
-                                      id=id))
-            id = chunks[-1].id
-            start_line += 1
+            parent_id = 0
+            chunk_id += 1
+
+        # elif len(lines[start_line]) > param.max_chunk_size:
+        #     chunks.extend(r_chunk_txt(file, param,
+        #                               source=lines[start_line],
+        #                               shift=line_offsets[start_line],
+        #                               chunk_id=chunk_id))
+        #     if end_line_numb > start_line:
+        #         parent_id = chunk_id
+        #     chunk_id = chunks[-1].chunk_id + 1
+        #     start_char = line_offsets[start_line] + len(lines[start_line])
+        #     start_line += 1
+        #     continue
+
         else:
-            end_line_numb = r_get_end_line(start_char, line_offsets,
-                                      max_offset=param.max_chunk_size,
-                                      start_line=start_line)
-        print("end_line:", end_line_numb)
-        start_char = line_offsets[end_line_numb] + len(lines[end_line_numb])
+            # there should be parser for next level of objects
+            # but now we parse it as text
+            parent_id = chunk_id
+            # print("big obj: id", chunk_id)
+            chunks.extend(r_chunk_txt(file, param,
+                                      source=source[
+                                          start_char:
+                                          end_line_offset + end_line_len],
+                                      shift=line_offsets[start_line],
+                                      chunk_id=chunk_id,
+                                      parent_id=parent_id
+                                      ))
+            chunk_id = chunks[-1].chunk_id + 1
+            parent_id = 0
+            curr_object += 1
+
+        start_char = line_offsets[end_line_numb] + len(lines[end_line_numb]) + 1
         start_line = end_line_numb + 1
+    #     print("end_line:", end_line_numb, "id:", chunk_id, "next_char:",start_char)
 
-    print("Top:", top_level)
+    # print("Top:", top_level)
 
-    for node in top_level:
-        if hasattr(node, "name"):
-            parent = getattr(node, "parent", None)
-            print("s:",
-                  node.lineno,
-                  node.col_offset,
-                  node.end_lineno,
-                  node.end_col_offset,
-                  node.name, type(parent).__name__ if parent else None)
+    # for node in top_level:
+    #     if hasattr(node, "name"):
+    #         parent = getattr(node, "parent", None)
+    #         print("t: l-b",
+    #               node.lineno,
+    #               "sh l-b",
+    #               line_offsets[node.lineno-1],
+    #               node.col_offset,
+    #               "l-e",
+    #               node.end_lineno,
+    #               node.end_col_offset,
+    #               node.name, type(parent).__name__ if parent else None)
 
     # print("-----code")
     # code = ast.get_source_segment(source, node)
@@ -380,18 +431,18 @@ def r_index(param: argparse.Namespace) -> None:
     chunks: list[MinimalSource] = []
     for f_ in get_all_file_paths(param.data_raw_path):
         extension = f_.suffix
-        size_in_bytes = f_.stat().st_size
+        # size_in_bytes = f_.stat().st_size
         if extension == '.py':
-            print(f"{i:4} chunk py:", size_in_bytes, f_)
-            # chunks.extend(r_chunk_py(str(f_), param))
+            # print(f"{i:4} chunk py:", size_in_bytes, f_)
+            chunks.extend(r_chunk_py(str(f_), param))
         elif extension in _TEXT_SEPARATORS.keys():
-            print(f"{i:4} chunk txt:", size_in_bytes, f_)
+            # print(f"{i:4} chunk txt:", size_in_bytes, f_)
             chunks.extend(r_chunk_txt(str(f_), param))
         elif should_index(str(f_)):
-            print(f"{i:4} chunk as txt:", size_in_bytes, f_)
+            # print(f"{i:4} chunk as txt:", size_in_bytes, f_)
             chunks.extend(r_chunk_txt(str(f_), param))
-        else:
-            print(f"{i:4} skip:", size_in_bytes, f_)
+        # else:
+        #     print(f"{i:4} skip:", size_in_bytes, f_)
         i += 1
 
     # print("-"*20)
@@ -404,9 +455,9 @@ def r_index(param: argparse.Namespace) -> None:
     # # print("-"*30, " txt")
     # # chunks = r_chunk_txt("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/format.sh", param)
     # # print(chunk)
-    chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py", param)]
+    # chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py", param)]
 
-    print(chunks)
+    # print(chunks)
 
     if chunks:
         # Write chunks to json file:  data/processed/chunks.json
