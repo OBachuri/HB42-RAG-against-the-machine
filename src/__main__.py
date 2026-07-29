@@ -7,7 +7,8 @@ import time
 # path_to_file = os.path.dirname(__file__)
 # sys.path.append(path_to_file)
 
-from src.r_chunk import r_index
+from src.r_chunk import r_chunking
+from src.r_index import r_index_bm25
 
 
 commands = {"index": "a_iii"}
@@ -128,8 +129,21 @@ def main() -> None:
 
     # Record start time
     start_time = time.perf_counter()
+    duration_all = 0
 
-    r_index(param)
+    r_chunking(param)
+
+    # Record end time
+    end_time = time.perf_counter()
+    duration = int(end_time - start_time)
+    duration_all = duration
+    print(f"Execution time: {duration // 60}:{duration % 60}"
+          " (minutes:seconds)")
+
+    start_time = end_time
+
+    print("-"*20)
+    r_index_bm25(param)
 
     # Record end time
     end_time = time.perf_counter()
@@ -137,6 +151,11 @@ def main() -> None:
     # Calculate duration
     duration = int(end_time - start_time)
     print(f"Execution time: {duration // 60}:{duration % 60}"
+          " (minutes:seconds)")
+    print("-"*20)
+
+    duration_all += duration
+    print(f"Total execution time: {duration_all // 60}:{duration_all % 60}"
           " (minutes:seconds)")
 
 

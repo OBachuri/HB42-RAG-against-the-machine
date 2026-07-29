@@ -46,6 +46,7 @@ uv run python -m src answer "How to configure OpenAI server?" --k=10
 - [HuggingFace description for Qwen3-0.6B](https://huggingface.co/Qwen/Qwen3-0.6B)
 - [PyTorch Documentation](https://docs.pytorch.org/docs/stable/index.html)
 - [Pydantic Docs](https://docs.pydantic.dev/latest/)
+- [BM25S Python library on github](https://github.com/xhluca/bm25s)
 
 
 ## Algorithm and implementation
@@ -63,6 +64,8 @@ uv run python -m src answer "How to configure OpenAI server?" --k=10
 ### Design decisions
 
 ### Challenges faced
+
+-  Library **BM25S** can`t cteate index for big dataset ( RAM > size of dataset * 5 )
 
 ### Example usage
 

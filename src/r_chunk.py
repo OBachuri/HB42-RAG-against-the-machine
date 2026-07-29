@@ -3,6 +3,7 @@ import argparse
 import sys
 from pathlib import Path
 from pydantic import RootModel
+from tqdm import tqdm
 
 from src.r_data_model import MinimalSource
 
@@ -421,7 +422,8 @@ def r_chunk_py(file: str,
             parent_id = 0
             curr_object += 1
 
-        start_char = line_offsets[end_line_numb] + len(lines[end_line_numb]) + 1
+        start_char = (line_offsets[end_line_numb]
+                      + len(lines[end_line_numb]) + 1)
         start_line = end_line_numb + 1
         # print("end_line:", end_line_numb, "id:", chunk_id, "next_char:", start_char, "obj:", curr_object)
 
@@ -447,12 +449,13 @@ def r_chunk_py(file: str,
     return chunks
 
 
-def r_index(param: argparse.Namespace) -> None:
-    print("---chunk---")
+def r_chunking(param: argparse.Namespace) -> None:
+    print("Chunking:")
 
-    # i = 1
+    f_count = 0
     chunks: list[MinimalSource] = []
-    for f_ in get_all_file_paths(param.data_raw_path):
+    all_files = get_all_file_paths(param.data_raw_path)
+    for f_ in tqdm(all_files, desc="Chunking files", unit="file"):
         extension = f_.suffix
         # size_in_bytes = f_.stat().st_size
         if extension == '.py':
@@ -467,13 +470,14 @@ def r_index(param: argparse.Namespace) -> None:
         elif should_index(str(Path(param.data_raw_path) / f_)):
             # print(f"{i:4} chunk as txt:", size_in_bytes, f_)
             chunks.extend(r_chunk_txt(str(f_), param))
-        # else:
+        else:
+            continue
         #     print(f"{i:4} skip:", size_in_bytes, f_)
-        # i += 1
+        f_count += 1
 
     # print("-"*20)
     # r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/offline_inference/basic/chat.py", param)
-    print("-"*20)
+    # print("-"*20)
     # chunks = r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py", param)
     # print("-"*30, " txt")
     # # chunks = r_chunk_txt("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/LICENSE", param)
@@ -485,6 +489,9 @@ def r_index(param: argparse.Namespace) -> None:
     # chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/offline_inference/basic/chat.py", param)]
 
     # print(chunks)
+
+    print("  Files processed :", f_count)
+    print("  Total chunks    :", len(chunks))
 
     if chunks:
         # Write chunks to json file:  data/processed/chunks.json
@@ -504,9 +511,8 @@ def r_index(param: argparse.Namespace) -> None:
             # Writing the list of chunks to a JSON file
             with open(file_path, "w", encoding="utf-8") as chunk_file:
                 chunk_file.write(json_string)
+            print("  Saved in        :", file_path)
         except Exception as ex:
             print(f"Error: can't store chunks.json! ({file_path})\n",
                   ex, file=sys.stderr)
             sys.exit(1)
-
-    print("---index---")
