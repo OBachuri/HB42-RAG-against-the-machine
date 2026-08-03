@@ -12,10 +12,12 @@ C_DIR := pwd
 
 UV := $(shell command -v uv 2>/dev/null)
 
-ACOMMAND := index
+ACOMMAND := chunk index 
 ARGS := --max_chunk_size 2000
 # ARGS := $(wordlist 2, 999, $(MAKECMDGOALS))
 
+help:
+	@echo  "uv run python -m src index"
 
 install:
 #	mkdir -p .cache/uv_cache .cache/hf_cache

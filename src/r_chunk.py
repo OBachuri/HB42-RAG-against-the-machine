@@ -425,7 +425,9 @@ def r_chunk_py(file: str,
         start_char = (line_offsets[end_line_numb]
                       + len(lines[end_line_numb]) + 1)
         start_line = end_line_numb + 1
-        # print("end_line:", end_line_numb, "id:", chunk_id, "next_char:", start_char, "obj:", curr_object)
+
+        # print("end_line:", end_line_numb, "id:",
+        # chunk_id, "next_char:", start_char, "obj:", curr_object)
 
     # print("Top:", top_level)
 
@@ -449,7 +451,7 @@ def r_chunk_py(file: str,
     return chunks
 
 
-def r_chunking(param: argparse.Namespace) -> None:
+def r_chunking(param: argparse.Namespace) -> list[MinimalSource]:
     print("Chunking:")
 
     f_count = 0
@@ -516,3 +518,4 @@ def r_chunking(param: argparse.Namespace) -> None:
             print(f"Error: can't store chunks.json! ({file_path})\n",
                   ex, file=sys.stderr)
             sys.exit(1)
+    return chunks

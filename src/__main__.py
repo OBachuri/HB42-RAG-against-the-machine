@@ -7,20 +7,32 @@ import time
 # path_to_file = os.path.dirname(__file__)
 # sys.path.append(path_to_file)
 
-from src.r_chunk import r_chunking
 from src.r_index import r_index_bm25
+from src.r_chunk import r_chunking
+
+from src.r_data_model import MinimalSource
 
 
-commands = {"index": "a_iii"}
+commands = {"chunk": "chunk",
+            "index": "index",
+            "search": "search <query>",
+            "search_dataset": "search_dataset",
+            "answer": "answer <query>",
+            "answer_dataset": "answer_dataset",
+            "evaluate": "evaluate"}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="RAG against the machine - Retrieval-Augmented Generation"
-        ""
+        description="RAG against the machine - Retrieval-Augmented Generation "
+        '(uv run python -m src <command> [options])'
     )
 
-    parser.add_argument('the_task', help=str(set(commands.keys())))
+    parser.add_argument(
+        'command',
+        nargs='*',
+        help="Command: " + str(tuple(commands.values()))
+    )
 
     parser.add_argument(
         "--max_chunk_size",
@@ -80,7 +92,7 @@ def main() -> None:
     parser.add_argument(
         "--k",
         default=10,
-        help="KKK...",
+        help="Quantity of chunks to retrieve",
         type=int,
     )
 
@@ -88,11 +100,11 @@ def main() -> None:
 
 #    param._get_args()
 
-    if (str(param.the_task).strip().lower() not in commands.keys()):
-        print(f"Command not found: '{param.the_task}'.",
-              " use: ", list(commands.keys()),
-              file=sys.stderr)
-        sys.exit(1)
+    # if (str(param.the_task).strip().lower() not in commands.keys()):
+    #     print(f"Command not found: '{param.the_task}'.",
+    #           " use: ", list(commands.keys()),
+    #           file=sys.stderr)
+    #     sys.exit(1)
 
     if not os.path.exists(param.data_raw_path):
         print(f"Directory with raw data not found: '{param.data_raw_path}'",
@@ -131,32 +143,92 @@ def main() -> None:
     start_time = time.perf_counter()
     duration_all = 0
 
-    r_chunking(param)
+    # r_chunking(param)
 
     # Record end time
-    end_time = time.perf_counter()
-    duration = int(end_time - start_time)
-    duration_all = duration
-    print(f"Execution time: {duration // 60}:{duration % 60}"
-          " (minutes:seconds)")
+    # end_time = time.perf_counter()
+    # duration = int(end_time - start_time)
+    # duration_all = duration
+    # print(f"Execution time: {duration // 60}:{duration % 60}"
+    #       " (minutes:seconds)")
 
-    start_time = end_time
+    # start_time = end_time
 
-    print("-"*20)
-    r_index_bm25(param)
+    arg_commands = []
+    search_query: list[str] = []
+    answer_query: list[str] = []
 
-    # Record end time
-    end_time = time.perf_counter()
+    i = 0
+    while i < len(param.command):
+        if param.command[i] in commands.keys():
+            if str(param.command[i]).lower() == "search":
+                try:
+                    query = param.command[i + 1]
+                    print(i, query)
+                    if len(query) < 2:
+                        raise IndexError
+                    search_query.append(query)
+                except Exception:
+                    print('Error: Parameter <query> not set or to short! \n'
+                          'The <query> parameter '
+                          'must be specified for the "search" commands.',
+                          file=sys.stderr)
+                    sys.exit(1)
+                i += 1
+            elif str(param.command[i]).lower() == "answer":
+                try:
+                    query = param.command[i + 1]
+                    if len(query) < 2:
+                        raise IndexError
+                    answer_query.append(query)
+                except Exception:
+                    print('Error: Parameter <query> not set or to short! \n'
+                          'The <query> parameter '
+                          'must be specified for the "answer" commands.',
+                          file=sys.stderr)
+                    sys.exit(1)
+                i += 1
+            else:
+                arg_commands.append(param.command[i])
+        else:
+            print(f'Error: Command "{param.command[i]}" not allowed!',
+                  file=sys.stderr)
+            sys.exit(1)
+        i += 1
 
-    # Calculate duration
-    duration = int(end_time - start_time)
-    print(f"Execution time: {duration // 60}:{duration % 60}"
-          " (minutes:seconds)")
-    print("-"*20)
+    i = 0
+    chunks: list[MinimalSource] = []
+    if "chunk" in arg_commands:
+        chunks = r_chunking(param)
+        i = 1
+        # Record end time
+        end_time = time.perf_counter()
+        # Calculate duration
+        duration = int(end_time - start_time)
+        duration_all += duration
+        print(f"Execution time: {duration // 60}:{duration % 60}"
+              " (minutes:seconds)")
+        print("-"*20)
+        start_time = end_time
+    if "index" in arg_commands:
+        retriver, chunks = r_index_bm25(param)
+        i += 1
+        # Record end time
+        end_time = time.perf_counter()
+        # Calculate duration
+        duration = int(end_time - start_time)
+        duration_all += duration
+        print(f"Execution time: {duration // 60}:{duration % 60}"
+              " (minutes:seconds)")
+        print("-"*20)
+        start_time = end_time
 
-    duration_all += duration
-    print(f"Total execution time: {duration_all // 60}:{duration_all % 60}"
-          " (minutes:seconds)")
+    if (i == 0):
+        help_text = parser.format_help()
+        print("No commands to run.\n", help_text)
+    elif i > 1:
+        print(f"Total execution time: {duration_all // 60}:{duration_all % 60}"
+              " (minutes:seconds)")
 
 
 if __name__ == "__main__":
