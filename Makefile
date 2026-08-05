@@ -12,8 +12,8 @@ C_DIR := pwd
 
 UV := $(shell command -v uv 2>/dev/null)
 
-ACOMMAND := chunk index 
-ARGS := --max_chunk_size 2000
+ACOMMAND := chunk index search "How to configure OpenAI server?" answer "How to configure OpenAI server?" 
+ARGS := --max_chunk_size 2000 --k=10
 # ARGS := $(wordlist 2, 999, $(MAKECMDGOALS))
 
 help:

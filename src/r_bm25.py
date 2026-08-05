@@ -7,7 +7,8 @@ import re
 import bm25s
 from tqdm import tqdm
 
-from src.r_data_model import MinimalSource
+from src.r_data_model import MinimalSource, RagDataset  # UnansweredQuestion
+from src.r_data_model import MinimalSearchResults, StudentSearchResults
 from src.r_chunk import r_chunking
 
 
@@ -99,7 +100,8 @@ def r_index_bm25(param: argparse.Namespace
     # write valid chunks
     if valid_chunks:
         # Write chunks to json file:  data/processed/chunks.json
-        file_path = Path(str(param.data_processed_path)) / "index_bm25" / Path("chunks.json")
+        file_path = Path(str(
+            param.data_processed_path)) / "index_bm25" / Path("chunks.json")
 
         try:
             # This creates the folders if they do not exist
@@ -152,13 +154,15 @@ def r_index_bm25(param: argparse.Namespace
 
     # tokenizer.save_vocab(file_path)
     # tokenizer.save_stopwords(file_path)
-    print(f"  Index saved the to: {file_path}")
+    print(f"  Index saved to: {file_path}")
 
     # get memory usage
     mem_use = bm25s.utils.benchmark.get_max_memory_usage()
     print(f"  Peak memory usage: {mem_use:.2f} GB")
 
-    # f_path = Path(param.data_raw_path) / "vllm-0.10.1/docs/serving/openai_compatible_server.md"
+    # f_path = Path(
+    # param.data_raw_path) /
+    # "vllm-0.10.1/docs/serving/openai_compatible_server.md
     # with open(f_path) as f:
     #     source = f.read()
     # words = _get_word_from_text(source)
@@ -175,16 +179,19 @@ def r_bm25_load(param: argparse.Namespace
     index_folder_path = Path(
         str(param.data_processed_path)) / Path("index_bm25")
 
-    if (index_folder_path.is_dir() and any(index_folder_path.iterdir())):
+    # print(index_folder_path)
+
+    if ((not index_folder_path.is_dir())
+       or (not any(index_folder_path.iterdir()))):
         print("Error: can't read index data for bm25 retriever "
-              f"({index_folder_path})\n",
-              "Folder not exist or empty.\n"
-              'Run "index" first ',
+              f"({index_folder_path})\n"
+              '  Folder not exist or empty.\n'
+              '  Run "index" first',
               file=sys.stderr)
         sys.exit(1)
 
     try:
-        retriever = bm25s.BM25.load("bm25s_very_big_index", mmap=True)
+        retriever = bm25s.BM25.load(index_folder_path, mmap=True)
     except Exception as ex:
         print("Error: can't read index data for bm25 retriever "
               f"({index_folder_path})\n",
@@ -209,7 +216,6 @@ def r_bm25_load(param: argparse.Namespace
         # Parse and validate the JSON string back into Pydantic objects
         chunks = RootModel[
             list[MinimalSource]].model_validate_json(json_string).root
-
     except Exception as ex:
         print("Error: Can't read chunks list from file"
               f"({file_path})\n",
@@ -223,30 +229,115 @@ def r_bm25_load(param: argparse.Namespace
 def r_bm25_retrive(param: argparse.Namespace,
                    retriever: bm25s.BM25,
                    chunks: list[MinimalSource],
-                   query: str = "How to configure OpenAI server?"):
+                   query: str = "",
+                   print_chunks: bool = False) -> list[MinimalSource]:
     # -------------------------------------
     # Query the corpus
     # query = "How to configure OpenAI server?"
     query_tokens = [_get_word_from_text(query)]
     # query_tokens = bm25s.tokenize(query)
-    print("q:", query_tokens)
+    # print("q:", query_tokens)
 
     # Get top-k results as a tuple of (doc ids, scores).
     # Both are arrays of shape (n_queries, k).
     # To return docs instead of IDs, set the `corpus=corpus` parameter.
     results, scores = retriever.retrieve(query_tokens, k=param.k)
-    indices: list[int] = results[0].tolist()
+    find_chunks: list[MinimalSource] = []
+    # indices: list[int] = results[0].tolist()
 
-    print("-"*20, "res")
-    print(results)
-    print("-"*20, "scores")
-    print(scores)
-    print("-"*20)
+    # print("-"*20, "res")
+    # print(results)
+    # print("-"*20, "scores")
+    # print(scores)
+    # print("-"*20)
     for i in range(results.shape[1]):
-        doc, score = results[0, i], scores[0, i]
-        print(f"Rank {i+1} (score: {score:.2f}): {doc}")
-        print(chunks[doc])
-    print("-"*20)
-    print(indices)
+        chunk_id, score = results[0, i], scores[0, i]
+        find_chunks.append(chunks[chunk_id])
+        if print_chunks:
+            c_ = chunks[chunk_id]
+            print(c_.file_path,
+                  f"[{c_.first_character_index}:{c_.last_character_index}]"
+                  f" (score: {score:.2f})")
+            # print(f"Rank {i+1} (score: {score:.2f}): {chunk_id}")
+            # print(chunks[chunk_id])
+    # print("-"*20)
+    # print(indices)
+    # print("-"*20)
 
-    print("-"*20)
+    return find_chunks
+
+
+def r_bm25_retrive_dataset(
+        param: argparse.Namespace,
+        retriever: bm25s.BM25,
+        chunks: list[MinimalSource],
+        write_file: bool = False) -> list[MinimalSearchResults]:
+
+    # Read file with query
+    file_path = Path(str(param.dataset_path))
+    if not (file_path.is_file() and file_path.stat().st_size > 0):
+        print("Error: Can't read query set. No file or empty file. "
+              f"({file_path})\n",
+              file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        # Read the raw text from the file
+        with open(file_path, "r", encoding="utf-8") as q_file:
+            json_string = q_file.read()
+        # Parse and validate the JSON string back into Pydantic objects
+        queries = RootModel[RagDataset].model_validate_json(json_string).root
+    except Exception as ex:
+        print("Error: Can't read query from file"
+              f"({file_path})\n",
+              ex,
+              file=sys.stderr)
+        sys.exit(1)
+
+    print("Loaded", len(queries.rag_questions), "questions")
+
+    search_result: list[MinimalSearchResults] = []
+    for q in tqdm(queries.rag_questions,
+                  desc="Search chunks for Question",
+                  unit="Question"):
+        chunks_fond = r_bm25_retrive(
+            param=param,
+            retriever=retriever,
+            chunks=chunks,
+            query=q.question,
+            print_chunks=False)
+        search_result.append(MinimalSearchResults(
+            question_id=q.question_id,
+            question=q.question,
+            retrieved_sources=chunks_fond))
+        # print(q.question_id)
+        # print(chunks_fond)
+
+    if write_file:
+        st_result = StudentSearchResults(k=param.k,
+                                         search_results=search_result)
+
+        json_string = RootModel(st_result).model_dump_json(indent=2)
+        file_path = Path(param.save_directory) / "dataset_docs_public.json"
+
+        try:
+            # This creates the folders if they do not exist
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as ex:
+            print("Error: can't create folder to store"
+                  "dataset_docs_public.json! \n",
+                  ex, file=sys.stderr)
+            sys.exit(1)
+
+        try:
+            # Writing to JSON file
+            with open(file_path, "w", encoding="utf-8") as res_file:
+                res_file.write(json_string)
+            print("  Saved student_search_results to :", file_path)
+        except Exception as ex:
+            print("Error: can't store student_search_results!"
+                  f"({file_path})\n",
+                  ex, file=sys.stderr)
+            sys.exit(1)
+
+    return (search_result)
