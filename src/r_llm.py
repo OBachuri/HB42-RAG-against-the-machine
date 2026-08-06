@@ -1,4 +1,4 @@
-import argparse
+# import argparse
 import sys
 import os
 import logging
@@ -8,6 +8,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import TextIteratorStreamer
 
 from src.r_data_model import MinimalSource
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from src.__main__ import RagCLI
 
 
 _SYSTEM_PROMPT = (
@@ -20,9 +24,10 @@ say:
 
 
 class R_LLM():
-    model_name = "Qwen/Qwen3-0.6B"
 
-    def __init__(self):
+    def __init__(self, model_name: str = "Qwen/Qwen3-0.6B"):
+
+        self.model_name = model_name
 
         # Disable the missing token warning (hides the warning)
         os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -40,7 +45,7 @@ class R_LLM():
     def query(self,
               question: str,
               chunks: list[MinimalSource],
-              param: argparse.Namespace) -> str:
+              param: RagCLI) -> str:
 
         # read chunks
         chunk_txt = ""

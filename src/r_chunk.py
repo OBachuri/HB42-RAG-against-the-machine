@@ -7,6 +7,11 @@ from tqdm import tqdm
 
 from src.r_data_model import MinimalSource
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from src.__main__ import RagCLI
+
+
 _TEXT_SEPARATORS: dict[str, list[str]] = {
     ".txt":  ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ",],
     ".html": ["</table>", "</div>", "</section>", "</p>",
@@ -122,7 +127,7 @@ def r_get_end_line(start: int, line_offsets: list[int],
 
 
 def r_chunk_txt(file: str,
-                param: argparse.Namespace,
+                param: RagCLI,
                 source: str = "",
                 shift: int = 0,
                 chunk_id: int = 1,
@@ -227,7 +232,7 @@ def r_chunk_txt(file: str,
 
 
 def r_chunk_py(file: str,
-               param: argparse.Namespace,
+               param: RagCLI,
                source: str = "", chunk_id: int = 1) -> list[MinimalSource]:
     """ Chunk Python files """
 
@@ -451,7 +456,7 @@ def r_chunk_py(file: str,
     return chunks
 
 
-def r_chunking(param: argparse.Namespace) -> list[MinimalSource]:
+def r_chunking(param: RagCLI) -> list[MinimalSource]:
     print("Chunking:")
 
     f_count = 0

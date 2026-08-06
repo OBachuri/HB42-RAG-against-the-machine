@@ -1,4 +1,4 @@
-import argparse
+# import argparse
 from pathlib import Path
 import sys
 from pydantic import TypeAdapter, RootModel
@@ -10,6 +10,10 @@ from tqdm import tqdm
 from src.r_data_model import MinimalSource, RagDataset  # UnansweredQuestion
 from src.r_data_model import MinimalSearchResults, StudentSearchResults
 from src.r_chunk import r_chunking
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from src.__main__ import RagCLI
 
 
 _CAMEL_1 = re.compile(r'([A-Z]+)([A-Z][a-z])')
@@ -27,6 +31,7 @@ def _get_word_from_text(text: str) -> list[str]:
     # Splitting camelCase Words
     # Example: "myCamelCaseText" becomes "my Camel Case Text".
     # text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", text)
+
     text = _CAMEL_1.sub(r'\1 \2', text)
     text = _CAMEL_2.sub(r'\1 \2', text)
 
@@ -51,7 +56,7 @@ def _get_word_from_text(text: str) -> list[str]:
     return [w for w in words if (len(w) > 1) and (len(w) < 50)]
 
 
-def r_index_bm25(param: argparse.Namespace
+def r_index_bm25(param: RagCLI
                  ) -> tuple[bm25s.BM25, list[MinimalSource]]:
     """ Create index BM25 and return Retriever object"""
 
@@ -172,7 +177,7 @@ def r_index_bm25(param: argparse.Namespace
     return (retriever, valid_chunks)
 
 
-def r_bm25_load(param: argparse.Namespace
+def r_bm25_load(param: RagCLI
                 ) -> tuple[bm25s.BM25, list[MinimalSource]]:
 
     # Path where index data was stored
@@ -226,7 +231,7 @@ def r_bm25_load(param: argparse.Namespace
     return (retriever, chunks)
 
 
-def r_bm25_retrive(param: argparse.Namespace,
+def r_bm25_retrive(param: RagCLI,
                    retriever: bm25s.BM25,
                    chunks: list[MinimalSource],
                    query: str = "",
@@ -268,7 +273,7 @@ def r_bm25_retrive(param: argparse.Namespace,
 
 
 def r_bm25_retrive_dataset(
-        param: argparse.Namespace,
+        param: RagCLI,
         retriever: bm25s.BM25,
         chunks: list[MinimalSource],
         write_file: bool = False) -> list[MinimalSearchResults]:

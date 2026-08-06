@@ -11,6 +11,7 @@ dependencies = [
 	"mypy>=1.0",
 	"bm25s>=0.2.0",
 	"tqdm>=4.66.0",
+	"stubs",
 	"transformers>=4.40.0",
 	"torch>=2.0.0",
 	"accelerate",
