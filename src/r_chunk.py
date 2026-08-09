@@ -1,9 +1,10 @@
 import ast
-import argparse
+# import argparse
 import sys
 from pathlib import Path
 from pydantic import RootModel
 from tqdm import tqdm
+import hashlib
 
 from src.r_data_model import MinimalSource
 
@@ -65,6 +66,14 @@ _SKIP_EXTENSIONS = {
 }
 
 _MAX_FILE_SIZE = 4 * 1024 * 1024      # 4 MB
+
+
+def chunk_id(file: str, start_line: int, end_line: int, text: str = "") -> str:
+    value = f"{file}:{start_line}:{end_line}:{text}"
+
+    return hashlib.sha256(
+        value.encode("utf-8")
+    ).hexdigest()
 
 
 def _should_skip(path: Path) -> bool:
@@ -140,9 +149,11 @@ def r_chunk_txt(file: str,
     end_char = 0
     chunks: list[MinimalSource] = []
 
+    # f_path = Path(param.data_raw_path).resolve() / file
+    f_path = Path(param.data_raw_path) / file
+
     if not source:   # or not source.strip():
         try:
-            f_path = Path(param.data_raw_path).resolve() / file
             with open(f_path) as f:
                 source = f.read()
             chunk_id = 0
@@ -154,7 +165,7 @@ def r_chunk_txt(file: str,
     # print("source:", source)
 
     if len(source) <= param.max_chunk_size:
-        return [MinimalSource(file_path=file,
+        return [MinimalSource(file_path=str(f_path),
                               first_character_index=start_char + shift,
                               last_character_index=(shift + len(source)-1),
                               parent_id=parent_id,
@@ -173,7 +184,7 @@ def r_chunk_txt(file: str,
         if end_char - start_char < param.max_chunk_size:
             if end_char - start_char >= param.min_chunk_size:
                 chunks.append(
-                    MinimalSource(file_path=file,
+                    MinimalSource(file_path=str(f_path),
                                   first_character_index=start_char + shift,
                                   last_character_index=end_char + shift,
                                   parent_id=parent_id,
@@ -193,7 +204,7 @@ def r_chunk_txt(file: str,
                 else:
                     start_char = index
                 chunks.append(
-                    MinimalSource(file_path=file,
+                    MinimalSource(file_path=str(f_path),
                                   first_character_index=start_char + shift,
                                   last_character_index=end_char + shift,
                                   parent_id=parent_id,
@@ -217,7 +228,7 @@ def r_chunk_txt(file: str,
         if (index <= 0) or ((index - start_char) < param.min_chunk_size):
             index = end_c
         chunks.append(
-            MinimalSource(file_path=file,
+            MinimalSource(file_path=str(f_path),
                           first_character_index=start_char + shift,
                           last_character_index=index + shift,
                           parent_id=parent_id,
@@ -237,16 +248,17 @@ def r_chunk_py(file: str,
     """ Chunk Python files """
 
     start_char = 0
-    end_char = 0
     start_line = 0
-    end_line = 0
+    # end_char = 0
+    # end_line = 0
     chunks: list[MinimalSource] = []
 
     # print("--py-file:", file)
 
+    f_path = Path(param.data_raw_path) / file
+
     if not source or not source.strip():
         try:
-            f_path = Path(param.data_raw_path) / file
             with open(f_path) as f:
                 source = f.read()
         except Exception as ex:
@@ -262,7 +274,7 @@ def r_chunk_py(file: str,
         return r_chunk_txt(file, param, source=source)
 
     if len(source) <= param.max_chunk_size:
-        return [MinimalSource(file_path=file,
+        return [MinimalSource(file_path=str(f_path),
                               first_character_index=start_char,
                               last_character_index=(len(source)-1),
                               chunk_id=chunk_id)]
@@ -300,7 +312,7 @@ def r_chunk_py(file: str,
         if len(source) - start_char < param.max_chunk_size:
             # end of file
             chunks.append(MinimalSource(
-                file_path=file,
+                file_path=str(f_path),
                 first_character_index=start_char,
                 last_character_index=(len(source)-1),
                 chunk_id=chunk_id,
@@ -386,7 +398,7 @@ def r_chunk_py(file: str,
                 else:
                     break
             chunks.append(
-                MinimalSource(file_path=file,
+                MinimalSource(file_path=str(f_path),
                               first_character_index=start_char,
                               last_character_index=end_,
                               chunk_id=chunk_id,
@@ -480,6 +492,7 @@ def r_chunking(param: RagCLI) -> list[MinimalSource]:
         else:
             continue
         #     print(f"{i:4} skip:", size_in_bytes, f_)
+
         f_count += 1
 
     # print("-"*20)

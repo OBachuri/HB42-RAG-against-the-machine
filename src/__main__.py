@@ -13,10 +13,12 @@ from src.r_bm25 import r_index_bm25, r_bm25_retrive, r_bm25_load
 from src.r_bm25 import r_bm25_retrive_dataset
 from src.r_chunk import r_chunking
 from src.r_llm import R_LLM
+from src.r_semantic import RSentenceTransformer
 
 from src.r_data_model import MinimalSource, MinimalAnswer
 from src.r_data_model import StudentSearchResultsAndAnswer
 from src.r_data_model import StudentSearchResults, RagDataset
+from src.r_data_model import RetrieveMode
 
 
 commands = {"chunk": "chunk",
@@ -110,20 +112,109 @@ a ground-truth dataset, for testing.
             "data/output/search_results_and_answer/UnansweredQuestions"),
                  eval_IoU: float = 0.05,
                  print_debug: bool = False,
-                 llm_model_name: str = "Qwen/Qwen3-0.6B"
+                 llm_model_name: str = "Qwen/Qwen3-0.6B",
+                 retrievemode: RetrieveMode = RetrieveMode.HYBRID
                  ):
-        self.k = k
-        self.max_chunk_size = max_chunk_size
-        self.min_chunk_size = min_chunk_size
-        self.max_overlap = max_overlap   # Max %% of overlap for chunks
+        self.k = 10
+
+        try:
+            k_ = int(k)
+            if (k_ < 1) or (k_ > 100):
+                raise ValueError("Wrong value, must be (1-100),"
+                                 " recomended (5-10)")
+            self.k = k_
+        except (ValueError, TypeError) as ex:
+            print(f'{RED}Error:{RESET} Wrong value for parameter "--k={k}" '
+                  '(must be an integer greater than 0 and less than 100)\n',
+                  f"Used default value k={self.k}\n{ex}\n",
+                  file=sys.stderr)
+
+        self.max_chunk_size = 2000
+        try:
+            v_ = int(max_chunk_size)
+            if (v_ < 200) or (v_ > 10000):
+                raise ValueError("Wrong value, must be (200-2000)")
+            self.max_chunk_size = v_
+        except (ValueError, TypeError) as ex:
+            print(f'{RED}Error:{RESET} Wrong value for'
+                  f' parameter "max_chunk_size={max_chunk_size}" '
+                  '(must be an integer greater than 200 '
+                  'and equal or less than 2000)\n',
+                  f"Used default value max_chunk_size={self.max_chunk_size}\n"
+                  f"{ex}\n", file=sys.stderr)
+
+        self.min_chunk_size = 200
+        try:
+            v_ = int(min_chunk_size)
+            if (v_ < 0) or (v_ > 500):
+                raise ValueError("Wrong value, must be (0-500)")
+            self.min_chunk_size = v_
+        except (ValueError, TypeError) as ex:
+            print(f'{RED}Error:{RESET} Wrong value for'
+                  f' parameter "min_chunk_size={min_chunk_size}" '
+                  '(must be an integer greater than 0 '
+                  'and equal or less than 500)\n',
+                  f"Used default value min_chunk_size={self.min_chunk_size}\n"
+                  f"{ex}\n",
+                  file=sys.stderr)
+
+        self.max_overlap = 15   # Max %% of overlap for chunks
+        try:
+            v_ = int(max_overlap)
+            if (v_ < 0) or (v_ >= 100):
+                raise ValueError("Wrong value, must be (0-99) %")
+            self.max_overlap = v_
+        except (ValueError, TypeError) as ex:
+            print(f'{RED}Error:{RESET} Wrong value for'
+                  f' parameter "max_overlap={max_overlap}" % '
+                  '(must be an integer greater than 0 '
+                  'and less than 100)\n(recommended: 10-20%)\n',
+                  f"Used default value max_overlap={self.max_overlap} %\n",
+                  f"{ex}\n",
+                  file=sys.stderr)
+
         self.data_raw_path = data_raw_path
         self.dataset_path = dataset_path
         self.data_processed_path = data_processed_path
         self.student_search_results_path = student_search_results_path
         self.save_directory = save_directory
-        self.eval_IoU = eval_IoU  # IoU - Intersection over Union
-        self.print_debug = print_debug
+
+        # IoU - Intersection over Union
+        self.eval_IoU: float = 0.05
+        try:
+            f_ = float(eval_IoU)
+            if (f_ <= 0) or (f_ > 1):
+                raise ValueError("Wrong value, must be (0.001-0.999)")
+            self.eval_IoU = f_
+        except (ValueError, TypeError) as ex:
+            print(f'{RED}Error:{RESET} Wrong value for'
+                  f' parameter "eval_IoU={eval_IoU}" % '
+                  '(must be an float greater than 0 '
+                  'and less than 1)\n',
+                  f"Used default value eval_IoU={self.eval_IoU} \n",
+                  f"{ex}\n",
+                  file=sys.stderr)
+
+        self.print_debug = bool(print_debug)
         self.llm_model_name = llm_model_name
+
+        self.retrieve_mode: RetrieveMode = RetrieveMode.HYBRID
+
+        try:
+            if isinstance(retrievemode, RetrieveMode):
+                self.retrieve_mode = retrievemode
+            else:
+                retrieve_mode = RetrieveMode[str(retrievemode).upper()]
+                self.retrieve_mode = retrieve_mode
+        except Exception as ex:
+            possible_val = [m.name for m in RetrieveMode]
+            print(f'{RED}Error:{RESET} Wrong value for'
+                  f' parameter "retrievemode={retrievemode}"  '
+                  '(must be value from the list: ', possible_val,
+                  ')\n',
+                  f"Used default value retrievemode={self.retrieve_mode} \n",
+                  f"{ex}\n",
+                  file=sys.stderr)
 
         self._retriver = None
         self._chunks: list[MinimalSource] = []
@@ -137,6 +228,8 @@ Splits large text documents into smaller chunks
         uv run python -m src chunk --max_chunk_size <int>
 
 """
+        if self.print_debug:
+            self._print()
         # print("Chunking:")
         self._chunks = r_chunking(self)
 
@@ -148,9 +241,20 @@ and build the index under data/processed/ (--data_processed_path).
   Usage:
         uv run python -m src index --max_chunk_size <int>
 """
+        if self.print_debug:
+            self._print()
         # print("index---")
         self._chunks = r_chunking(self)
-        self._retriver, self._chunks = r_index_bm25(self)
+        print("-"*30)
+        if (self.retrieve_mode == RetrieveMode.BM25
+           or self.retrieve_mode == RetrieveMode.HYBRID):
+            self._retriver, self._chunks = r_index_bm25(self)
+            print("-"*30)
+        if (self.retrieve_mode == RetrieveMode.EMBEDDINGS
+           or self.retrieve_mode == RetrieveMode.HYBRID):
+            with RSentenceTransformer(self) as rs:
+                rs.index(self)
+            print("-"*30)
 
     def search(self, query: str):
         """
@@ -160,9 +264,10 @@ Return the top-k sources for a single query.
         uv run python -m src search <query> --k <int>
 """
 
-        print("Search:", query)
-        if not query or not query.strip():
-            print('Error: Parameter <query> not set or to short! \n'
+        print(f"Search(k={self.k}):", query)
+        if not query or not query.strip() or (len(query) < 2):
+            print(f'{RED}Error:{RESET} Parameter <query> not set'
+                  ' or to short! \n'
                   'The <query> parameter '
                   'must be specified for the "search" commands. \n'
                   'uv run python -m src search <query> --k <int> \n'
@@ -189,7 +294,10 @@ Run search over a whole dataset and write a StudentSearchResults JSON file.
         uv run python -m src search_dataset --dataset_path <path> --k <int> \
 --save_directory <dir>
 """
-        print("Search dataset:")
+        if self.print_debug:
+            self._print()
+
+        print(f"Search dataset(k={self.k}):")
 
         if (self._retriver is None) or (not self._chunks):
             self._retriver, self._chunks = r_bm25_load(self)
@@ -207,12 +315,16 @@ Answer a single query using the retrieved context.
   Usage:
         uv run python -m src answer <query> --k <int>
 """
-        print("Answer to query:", query)
-        if not query or not query.strip():
-            print('Error: Parameter <query> not set or to short! \n'
+        if self.print_debug:
+            self._print()
+
+        print(f"Answer to query (k={self.k}):", query)
+        if not query or not query.strip() or (len(query) < 2):
+            print(f'{RED}Error:{RESET} Parameter <query> not'
+                  ' set or to short!\n'
                   'The <query> parameter '
-                  'must be specified for the "search" commands. \n'
-                  'uv run python -m src answer <query> --k <int> \n'
+                  'must be specified for the "search" commands.\n'
+                  'uv run python -m src answer <query> --k <int>\n'
                   'Example:\n'
                   'uv run python -m src answer '
                   '"How to configure OpenAI server?" --k=5',
@@ -252,6 +364,9 @@ Generate answers for a dataset, producing a StudentSearchResultsAndAnswer JSON.
         uv run python -m src answer_dataset --student_search_results_path \
 <path> --save_directory <dir>  --k <int>
 """
+        if self.print_debug:
+            self._print()
+
         print("Answer dataset:")
         if (self._retriver is None) or (not self._chunks):
             self._retriver, self._chunks = r_bm25_load(self)
@@ -321,6 +436,9 @@ Report recall@k against a ground-truth dataset, for testing.
         uv run python -m src evaluate \
 --student_search_results_path <path> --dataset_path <path>
 """
+        if self.print_debug:
+            self._print()
+
         print("Evaluation:")
 
         # Read file to evaluate
@@ -430,6 +548,15 @@ Report recall@k against a ground-truth dataset, for testing.
             print(f"{BLUE}"
                   f"recall@{i} {curr_recal:2.3f} ({(curr_recal*100):3.1f} %)",
                   f"{RESET} quantity:", curr_)
+
+    def _print(self) -> None:
+        print("-"*30)
+        print("Parameters:")
+        var_ = vars(self)
+        for p in var_:
+            if str(p)[:1] != '_':
+                print(f"{p:20}:{var_[p]}")
+        print("-"*30)
 
 
 def main() -> None:

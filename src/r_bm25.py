@@ -87,7 +87,8 @@ def r_index_bm25(param: RagCLI
         else:
             file = c_.file_path
             try:
-                f_path = Path(param.data_raw_path) / file
+                # f_path = Path(param.data_raw_path) / file
+                f_path = Path(file)
                 with open(f_path) as f:
                     source = f.read()
                 words = _get_word_from_text(file)
@@ -314,6 +315,7 @@ def r_bm25_retrive_dataset(
         search_result.append(MinimalSearchResults(
             question_id=q.question_id,
             question=q.question,
+            question_str=q.question,
             retrieved_sources=chunks_fond))
         # print(q.question_id)
         # print(chunks_fond)
