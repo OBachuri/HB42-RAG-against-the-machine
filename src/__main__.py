@@ -286,6 +286,14 @@ Return the top-k sources for a single query.
                        query=query,
                        print_chunks=True)
 
+        if (self.retrieve_mode == RetrieveMode.EMBEDDINGS
+           or self.retrieve_mode == RetrieveMode.HYBRID):
+            with RSentenceTransformer(self) as rs:
+                rs.retrive(self,
+                           chunks=self._chunks,
+                           query=query,)
+            print("-"*30)
+
     def search_dataset(self):
         """
 Run search over a whole dataset and write a StudentSearchResults JSON file.

@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 from pydantic import RootModel
 from tqdm import tqdm
-import hashlib
 
 from src.r_data_model import MinimalSource
 
@@ -67,13 +66,6 @@ _SKIP_EXTENSIONS = {
 
 _MAX_FILE_SIZE = 4 * 1024 * 1024      # 4 MB
 
-
-def chunk_id(file: str, start_line: int, end_line: int, text: str = "") -> str:
-    value = f"{file}:{start_line}:{end_line}:{text}"
-
-    return hashlib.sha256(
-        value.encode("utf-8")
-    ).hexdigest()
 
 
 def _should_skip(path: Path) -> bool:

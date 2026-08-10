@@ -24,10 +24,20 @@ COLLECTION_NAME = "RAG_index"
 
 
 class RSentenceTransformer():
+    """ Semantic embeddings
+
+        Tested with embedding modeles:
+            1) BAAI/bge-small-en-v1.5
+                - better result (512 tokens) but it take 20 min
+                  for embedding on H42 PC (i7-13 wo GPU)
+            2) all-MiniLM-L6-v2
+                - moderate result (256 tokens) but 4 min on embedding
+    """
 
     def __init__(self, param: RagCLI,  model_name: str = 'all-MiniLM-L6-v2'):
 
-        self.model_name = model_name
+        self.model_name: str = model_name
+        self._file_path: str = ""
 
         # Disable the missing token warning (hides the warning)
         os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -49,6 +59,7 @@ class RSentenceTransformer():
 
         # Create persistent Qdrant database
         self._client = QdrantClient(path=str(file_path))
+        self._file_path = str(file_path)
 
         # Determine vector dimension
         test_vector = self._model.encode("test")
@@ -118,7 +129,9 @@ class RSentenceTransformer():
         # Store vectors
         points = []
 
-        for chunk, vector in zip(chunks, vectors):
+        for chunk, vector in tqdm(zip(chunks, vectors),
+                                  desc="Prepare point to store",
+                                  unit="point"):
             points.append(
                 PointStruct(
                     id=chunk.id,
@@ -131,12 +144,48 @@ class RSentenceTransformer():
                 )
             )
 
-        self._client.upsert(
-            collection_name=COLLECTION_NAME,
-            points=points,
-        )
+        print("Saving vector index to:", self._file_path)
+
+        BATCH_SIZE = 250
+        for i in tqdm(range(0, len(points), BATCH_SIZE),
+                      desc="Saving point to store",
+                      unit=f"batch ({BATCH_SIZE} points)"):
+            batch = points[i:i + BATCH_SIZE]
+
+            self._client.upsert(
+                collection_name=COLLECTION_NAME,
+                points=batch,
+            )
+
+        # self._client.upsert(
+        #     collection_name=COLLECTION_NAME,
+        #     points=points,
+        # )
 
         print("Index created.")
+
+    def retrive(self,
+                param: RagCLI,
+                chunks: list[MinimalSource] = [],
+                query: str = "",
+                print_chunks: bool = False) -> list[MinimalSource]:
+
+        # Convert question to vector
+        query_vector = self._model.encode(
+            query,
+            normalize_embeddings=True,
+        ).tolist()
+
+        # Search
+        results = self._client.query_points(
+                collection_name=COLLECTION_NAME,
+                query=query_vector,
+                limit=param.k,
+            ).points
+
+        print(results)
+
+        return []
 
     def __del__(self):
         if hasattr(self, "_client"):
