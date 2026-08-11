@@ -8,6 +8,7 @@ import bm25s
 from tqdm import tqdm
 
 from src.r_data_model import MinimalSource, RagDataset  # UnansweredQuestion
+from src.r_data_model import RetrievedChunk, RetrieveMode
 from src.r_data_model import MinimalSearchResults, StudentSearchResults
 from src.r_chunk import r_chunking
 
@@ -232,12 +233,16 @@ def r_bm25_load(param: RagCLI
     return (retriever, chunks)
 
 
-def r_bm25_retrive(param: RagCLI,
-                   retriever: bm25s.BM25,
-                   chunks: list[MinimalSource],
-                   query: str = "",
-                   print_chunks: bool = False) -> list[MinimalSource]:
+def r_bm25_retrieve(param: RagCLI,
+                    retriever: bm25s.BM25,
+                    chunks: list[MinimalSource],
+                    query: str = "",
+                    print_chunks: bool = False) -> list[RetrievedChunk]:
     # -------------------------------------
+
+    if print_chunks:
+        print("Retrieved by BM25:")
+
     # Query the corpus
     # query = "How to configure OpenAI server?"
     query_tokens = [_get_word_from_text(query)]
@@ -248,7 +253,7 @@ def r_bm25_retrive(param: RagCLI,
     # Both are arrays of shape (n_queries, k).
     # To return docs instead of IDs, set the `corpus=corpus` parameter.
     results, scores = retriever.retrieve(query_tokens, k=param.k)
-    find_chunks: list[MinimalSource] = []
+    find_chunks: list[RetrievedChunk] = []
     # indices: list[int] = results[0].tolist()
 
     # print("-"*20, "res")
@@ -258,12 +263,25 @@ def r_bm25_retrive(param: RagCLI,
     # print("-"*20)
     for i in range(results.shape[1]):
         chunk_id, score = results[0, i], scores[0, i]
-        find_chunks.append(chunks[chunk_id])
+        c_ = chunks[chunk_id]
+        find_chunks.append(
+            RetrievedChunk(
+                id=c_.id,
+                file_path=c_.file_path,
+                first_character_index=c_.first_character_index,
+                last_character_index=c_.last_character_index,
+                metod=RetrieveMode.BM25,
+                score=score))
         if print_chunks:
-            c_ = chunks[chunk_id]
-            print(c_.file_path,
-                  f"[{c_.first_character_index}:{c_.last_character_index}]"
-                  f" (score: {score:.2f})")
+            if param.print_debug:
+                print(c_.file_path,
+                      f"[{c_.first_character_index}:{c_.last_character_index}]"
+                      f" (score: {score:.2f}) id={c_.id}")
+            else:
+                print(c_.file_path,
+                      f"[{c_.first_character_index}:{c_.last_character_index}]"
+                      f" (score: {score:.2f})")
+
             # print(f"Rank {i+1} (score: {score:.2f}): {chunk_id}")
             # print(chunks[chunk_id])
     # print("-"*20)
@@ -273,7 +291,7 @@ def r_bm25_retrive(param: RagCLI,
     return find_chunks
 
 
-def r_bm25_retrive_dataset(
+def r_bm25_retrieve_dataset(
         param: RagCLI,
         retriever: bm25s.BM25,
         chunks: list[MinimalSource],
@@ -306,7 +324,7 @@ def r_bm25_retrive_dataset(
     for q in tqdm(queries.rag_questions,
                   desc="Search chunks for Question",
                   unit="Question"):
-        chunks_fond = r_bm25_retrive(
+        chunks_fond = r_bm25_retrieve(
             param=param,
             retriever=retriever,
             chunks=chunks,

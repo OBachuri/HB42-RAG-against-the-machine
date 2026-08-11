@@ -72,6 +72,11 @@ class MinimalSource(BaseModel):
         return data
 
 
+class RetrievedChunk(MinimalSource):
+    score: float = 0
+    metod: RetrieveMode | None = None
+
+
 class UnansweredQuestion(BaseModel):
     question_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     question: str

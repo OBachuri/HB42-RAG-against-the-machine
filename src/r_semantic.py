@@ -4,14 +4,14 @@ import json
 import logging
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
-import numpy as np
+# import numpy as np
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from tqdm import tqdm
 
 from pydantic import TypeAdapter, RootModel
 
-from src.r_data_model import MinimalSource
+from src.r_data_model import MinimalSource, RetrievedChunk, RetrieveMode
 from src.r_chunk import r_chunking
 
 from typing import TYPE_CHECKING
@@ -21,6 +21,13 @@ if TYPE_CHECKING:
 
 INDEX_DIR = "vector_index"
 COLLECTION_NAME = "RAG_index"
+BATCH_SIZE = 250
+
+# Color constants
+GREEN = "\033[92m"
+BLUE = "\033[94m"
+RED = "\033[91m"
+RESET = "\033[0m"
 
 
 class RSentenceTransformer():
@@ -138,7 +145,11 @@ class RSentenceTransformer():
                     vector=vector.tolist(),
                     payload={
                         # "text": chunk["text"],
-                        "file": chunk.file_path
+                        "file": chunk.file_path,
+                        "char_from": chunk.first_character_index,
+                        "char_to": chunk.last_character_index,
+                        "chunk_id": chunk.chunk_id,
+                        "parent_id": chunk.parent_id
                         # "symbol": chunk["symbol"],
                     },
                 )
@@ -146,7 +157,6 @@ class RSentenceTransformer():
 
         print("Saving vector index to:", self._file_path)
 
-        BATCH_SIZE = 250
         for i in tqdm(range(0, len(points), BATCH_SIZE),
                       desc="Saving point to store",
                       unit=f"batch ({BATCH_SIZE} points)"):
@@ -164,11 +174,37 @@ class RSentenceTransformer():
 
         print("Index created.")
 
+    def check_point_count(self) -> int:
+
+        count = self._client.count(
+            collection_name=COLLECTION_NAME,
+            exact=True,
+        ).count
+
+        # if count:
+        #     print(f"Collection contains {count} vectors")
+        # else:
+        #     print("Collection is empty")
+
+        return count
+
     def retrive(self,
                 param: RagCLI,
-                chunks: list[MinimalSource] = [],
                 query: str = "",
-                print_chunks: bool = False) -> list[MinimalSource]:
+                print_chunks: bool = False) -> list[RetrievedChunk]:
+
+        # Check that index not empty
+        if not (self.check_point_count() > 0):
+            print(f"{RED}Error:{RESET} Vector index is empty!\n",
+                  "Before search Run inex creation:\n",
+                  "uv run python -m src index",
+                  file=sys.stderr)
+            sys.exit(1)
+
+        res = []
+
+        if print_chunks:
+            print(f"Retrieved by {self.model_name}:")
 
         # Convert question to vector
         query_vector = self._model.encode(
@@ -177,15 +213,44 @@ class RSentenceTransformer():
         ).tolist()
 
         # Search
-        results = self._client.query_points(
+        results_points = self._client.query_points(
                 collection_name=COLLECTION_NAME,
                 query=query_vector,
                 limit=param.k,
             ).points
 
-        print(results)
+        # print(results)
 
-        return []
+        for r in results_points:
+            id = r.id
+            data = r.payload
+            score = r.score
+            if not (data is None):
+                res.append(
+                    RetrievedChunk(
+                        id=id,
+                        file_path=data.get("file", ""),
+                        first_character_index=data.get("char_from", 0),
+                        last_character_index=data.get("char_to", 0),
+                        chunk_id=data.get("chunk_id", 0),
+                        parent_id=data.get("parent_id", 0),
+                        score=score,
+                        metod=RetrieveMode.EMBEDDINGS
+                        )
+                )
+                if print_chunks:
+                    if param.print_debug:
+                        print(f'{data["file"]} '
+                              f'[{data["char_from"]}:{data["char_to"]}]',
+                              f"(score: {score:1.3f}) id={id}")
+                    else:
+                        print(f'{data["file"]} '
+                              f'[{data["char_from"]}:{data["char_to"]}]',
+                              f"(score: {score:1.3f})")
+
+        # print("----")
+        # print(res)
+        return res
 
     def __del__(self):
         if hasattr(self, "_client"):

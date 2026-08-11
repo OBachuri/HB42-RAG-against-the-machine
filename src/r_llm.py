@@ -55,7 +55,8 @@ class R_LLM():
             chunk_id = ch_.chunk_id
 
             try:
-                f_path = Path(param.data_raw_path) / Path(file)
+                # f_path = Path(param.data_raw_path) / Path(file)
+                f_path = Path(file)
                 with open(f_path) as f:
                     source = f.read()
             except Exception as ex:

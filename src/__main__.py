@@ -9,11 +9,12 @@ from pydantic import RootModel
 # path_to_file = os.path.dirname(__file__)
 # sys.path.append(path_to_file)
 
-from src.r_bm25 import r_index_bm25, r_bm25_retrive, r_bm25_load
-from src.r_bm25 import r_bm25_retrive_dataset
+from src.r_bm25 import r_index_bm25, r_bm25_retrieve, r_bm25_load
+from src.r_bm25 import r_bm25_retrieve_dataset
 from src.r_chunk import r_chunking
 from src.r_llm import R_LLM
 from src.r_semantic import RSentenceTransformer
+from src.r_pipeline import RPipeLine
 
 from src.r_data_model import MinimalSource, MinimalAnswer
 from src.r_data_model import StudentSearchResultsAndAnswer
@@ -263,6 +264,8 @@ Return the top-k sources for a single query.
   Usage:
         uv run python -m src search <query> --k <int>
 """
+        if self.print_debug:
+            self._print()
 
         print(f"Search(k={self.k}):", query)
         if not query or not query.strip() or (len(query) < 2):
@@ -277,22 +280,10 @@ Return the top-k sources for a single query.
                   file=sys.stderr)
             sys.exit(1)
 
-        if (self._retriver is None) or (not self._chunks):
-            self._retriver, self._chunks = r_bm25_load(self)
-
-        r_bm25_retrive(param=self,
-                       retriever=self._retriver,
-                       chunks=self._chunks,
-                       query=query,
-                       print_chunks=True)
-
-        if (self.retrieve_mode == RetrieveMode.EMBEDDINGS
-           or self.retrieve_mode == RetrieveMode.HYBRID):
-            with RSentenceTransformer(self) as rs:
-                rs.retrive(self,
-                           chunks=self._chunks,
-                           query=query,)
-            print("-"*30)
+        RPipeLine.retrive(param=self,
+                          query=query,
+                          print_chunks=True
+                          )
 
     def search_dataset(self):
         """
@@ -307,14 +298,16 @@ Run search over a whole dataset and write a StudentSearchResults JSON file.
 
         print(f"Search dataset(k={self.k}):")
 
-        if (self._retriver is None) or (not self._chunks):
-            self._retriver, self._chunks = r_bm25_load(self)
+        RPipeLine.retrieve_dataset(param=self, write_file=True)
 
-        r_bm25_retrive_dataset(
-            param=self,
-            retriever=self._retriver,
-            chunks=self._chunks,
-            write_file=True)
+        # if (self._retriver is None) or (not self._chunks):
+        #     self._retriver, self._chunks = r_bm25_load(self)
+
+        # r_bm25_retrieve_dataset(
+        #     param=self,
+        #     retriever=self._retriver,
+        #     chunks=self._chunks,
+        #     write_file=True)
 
     def answer(self, query: str):
         """
@@ -339,19 +332,15 @@ Answer a single query using the retrieved context.
                   file=sys.stderr)
             sys.exit(1)
 
-        if (self._retriver is None) or (not self._chunks):
-            self._retriver, self._chunks = r_bm25_load(self)
-
         if self._c_llm is None:
             self._c_llm = R_LLM(self.llm_model_name)
 
         print("Source (chunks):")
-        chunks_for_RAG = r_bm25_retrive(
+        chunks_for_RAG = RPipeLine.retrive(
             param=self,
-            retriever=self._retriver,
-            chunks=self._chunks,
             query=query,
-            print_chunks=True)
+            print_chunks=self.print_debug
+            )
 
         print("------------")
         print("Answer:")
@@ -382,7 +371,7 @@ Generate answers for a dataset, producing a StudentSearchResultsAndAnswer JSON.
         if self._c_llm is None:
             self._c_llm = R_LLM(self.llm_model_name)
 
-        ret_res = r_bm25_retrive_dataset(
+        ret_res = r_bm25_retrieve_dataset(
             param=self,
             retriever=self._retriver,
             chunks=self._chunks,

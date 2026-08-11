@@ -67,7 +67,6 @@ _SKIP_EXTENSIONS = {
 _MAX_FILE_SIZE = 4 * 1024 * 1024      # 4 MB
 
 
-
 def _should_skip(path: Path) -> bool:
     # Skip directories in the path
     if any(part in _SKIP_DIRS for part in path.parts):
@@ -488,17 +487,28 @@ def r_chunking(param: RagCLI) -> list[MinimalSource]:
         f_count += 1
 
     # print("-"*20)
-    # r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/offline_inference/basic/chat.py", param)
+    # r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/
+    # raw/vllm-0.10.1/examples/offline_inference/basic/chat.py", param)
     # print("-"*20)
-    # chunks = r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py", param)
+    # chunks = r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/
+    # my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py",
+    # param)
     # print("-"*30, " txt")
-    # # chunks = r_chunk_txt("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/LICENSE", param)
+    # # chunks = r_chunk_txt(
+    # "/home/obachuri/avb/Python/RAG-against-the-machine/
+    # my-01/data/raw/vllm-0.10.1/LICENSE", param)
     # # print(chunks)
     # # print("-"*30, " txt")
-    # # chunks = r_chunk_txt("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/format.sh", param)
+    # # chunks = r_chunk_txt(
+    # "/home/obachuri/avb/Python/RAG-against-the-machine/
+    # my-01/data/raw/vllm-0.10.1/format.sh", param)
     # # print(chunk)
-    # chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py", param)]
-    # chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/raw/vllm-0.10.1/examples/offline_inference/basic/chat.py", param)]
+    # chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/
+    # my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py",
+    # param)]
+    # chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/
+    # my-01/data/raw/vllm-0.10.1/examples/offline_inference/basic/chat.py",
+    # param)]
 
     # print(chunks)
 
