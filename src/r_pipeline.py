@@ -28,7 +28,7 @@ class RPipeLine():
                 ) -> list[MinimalSource]:
 
         RRF_influence_bm25 = 1
-        RRF_influence_vector = 0.99
+        RRF_influence_vector = 0.9
         RRF_bm25_min_scope = 0.01
         RRF_k = 60
 
@@ -36,8 +36,8 @@ class RPipeLine():
         res = []
         print_ = print_chunks
         if param.retrieve_mode == RetrieveMode.HYBRID:
-            if k < 20:
-                param.k += 10
+            if k < 30:
+                param.k += 15
             if print_ and not (param.print_debug):
                 print_ = False
 

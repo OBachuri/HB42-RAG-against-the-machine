@@ -3,14 +3,17 @@ import os
 import json
 import logging
 from pathlib import Path
-from sentence_transformers import SentenceTransformer
-# import numpy as np
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
 from tqdm import tqdm
 import warnings
-
+from datetime import datetime, timezone
 from pydantic import TypeAdapter, RootModel
+
+from sentence_transformers import SentenceTransformer
+
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import Filter, FieldCondition, MatchAny
+
 
 from src.r_data_model import MinimalSource, RetrievedChunk, RetrieveMode
 from src.r_chunk import r_chunking
@@ -38,14 +41,23 @@ class RSentenceTransformer():
             1) BAAI/bge-small-en-v1.5
                 - better result (512 tokens) but it take 20 min
                   for embedding on H42 PC (i7-13 wo GPU)
+                  (size ~33M)
             2) all-MiniLM-L6-v2
                 - moderate result (256 tokens) but 4 min on embedding
+                  (size ~22M)
+            3) intfloat/e5-small-v2 
+                - (size ~33M)
+            4) nomic-ai/nomic-embed-text-v1.5
+                - (size ~137M)
+            5) jina-code-embeddings
+                - Models specifically for natural-language → code retrieval.
     """
 
     def __init__(self, param: RagCLI,  model_name: str = 'all-MiniLM-L6-v2'):
 
         self.model_name: str = model_name
         self._file_path: str = ""
+        self.max_chunk_size = param.max_chunk_size
 
         # Disable the missing token warning (hides the warning)
         os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -118,6 +130,62 @@ class RSentenceTransformer():
             print("-"*30)
         print(f"Indexing (Embedding model:{self.model_name}):")
 
+        time_ = datetime.now(timezone.utc)
+
+        if self.check_point_count() < 1:
+            time_last_index = None
+        else:
+            time_last_index = self.get_index_time()
+        if time_last_index is None:
+            # There are points in db, but no iformation about last index
+            # Deletes all points but keeps your collection schema
+            print("  All existing points deleted.")
+            self._client.delete(
+                collection_name=COLLECTION_NAME,
+                points_selector=Filter()
+            )
+        else:
+            print("  Incremental indexing (last time indexing:", 
+                    f"({time_last_index} utc)")
+            c_files: set[str] = set()
+
+            # find new file and file with changes
+            # Convert string date to a datetime object if needed
+                
+            source_dir = Path(param.data_raw_path)
+
+            # Iterate through all files in the directory - recursive search
+            for file_path in source_dir.rglob('*'):
+                if file_path.is_file():
+                    # Get the modification time and convert it to a datetime
+                    mtime = datetime.fromtimestamp(
+                        file_path.stat().st_mtime, timezone.utc)
+                    
+                    # Compare dates
+                    if mtime > time_last_index:
+                        c_files.add(str(file_path))
+
+            # print(c_files)
+
+            # delete point for canged files
+            self._client.delete(
+                collection_name=COLLECTION_NAME,
+                points_selector=Filter(
+                    must=[
+                        FieldCondition(
+                            key="file",
+                            # MatchAny acts like an SQL 'IN' clause
+                            match=MatchAny(any=c_files) 
+                        )
+                            ]
+                        ),
+                    )
+                # chunks only by chagged files
+            chunks = [ch for ch in chunks if ch.file_path in c_files]
+            if c_files:
+                print(f"  {len(c_files)} chunks to update")
+
+                
         file = ""
         source: str = ""
         i = 0
@@ -181,6 +249,8 @@ class RSentenceTransformer():
                 collection_name=COLLECTION_NAME,
                 points=batch,
             )
+
+        self.save_index_time(time_)
 
         # self._client.upsert(
         #     collection_name=COLLECTION_NAME,
@@ -267,17 +337,61 @@ class RSentenceTransformer():
         # print(res)
         return res
 
-    def __del__(self):
-        if hasattr(self, "_client"):
-            self.close()
+    def save_index_time(self, time_: datetime = datetime.now(timezone.utc)):
+        data = {
+            "last_indexed": time_.isoformat(),
+            "model": self.model_name,
+            "max_chunk_size": self.max_chunk_size
+        }
+
+        path = Path(self._file_path) / "index_state.json" 
+
+        path.write_text(
+            json.dumps(data, indent=2),
+            encoding="utf-8",
+        )
+
+    def get_index_time(self) -> None | datetime:
+
+        path = Path(self._file_path) / "index_state.json" 
+
+        if not path.exists():
+            return None
+
+        try: 
+            data = json.loads(
+                path.read_text(encoding="utf-8")
+            )
+        except Exception:
+            return None
+        model = data.get("model", None)
+        max_chunk_size = data.get("max_chunk_size", 0)
+        td = data.get("last_indexed", None)
+        if ((td is None) 
+           or not (model == self.model_name)
+           or not (max_chunk_size == self.max_chunk_size)):
+            return None
+
+        try:
+            r_td = datetime.fromisoformat(td)
+        except Exception:
+            r_td = None
+
+        return r_td
+
 
     def close(self):
         if self._client is not None:
             self._client.close()
             self._client = None
 
+    def __del__(self):
+        if hasattr(self, "_client"):
+            self.close()
+
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
+

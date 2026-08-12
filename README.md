@@ -42,7 +42,7 @@ uv run python -m src answer "How to configure OpenAI server?" --k=10
 uv run python -m src search_dataset --dataset_path <path> --k <int> --save_directory <dir>
 
 # Generate answers for a dataset, producing a StudentSearchResultsAndAnswer JSON file.
-uv run python -m src answer_dataset –student_search_results_path <path> –save_directory <dir>
+uv run python -m src answer_dataset --student_search_results_path <path> --save_directory <dir>
 
 # Evaluate
 uv run python -m src evaluate --student_search_results_path <path> --dataset_path <path>
