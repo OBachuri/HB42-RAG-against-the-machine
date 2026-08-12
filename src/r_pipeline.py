@@ -23,11 +23,12 @@ class RPipeLine():
     def retrive(cls,
                 param: RagCLI,
                 query: str = "",
-                print_chunks: bool = False
+                print_chunks: bool = False,
+                rs: RSentenceTransformer | None = None
                 ) -> list[MinimalSource]:
 
-        RRF_influence_bm25 = 0.99
-        RRF_influence_vector = 1
+        RRF_influence_bm25 = 1
+        RRF_influence_vector = 0.99
         RRF_bm25_min_scope = 0.01
         RRF_k = 60
 
@@ -57,10 +58,16 @@ class RPipeLine():
 
         if (param.retrieve_mode == RetrieveMode.EMBEDDINGS
            or param.retrieve_mode == RetrieveMode.HYBRID):
-            with RSentenceTransformer(param) as rs:
+            if rs is None:
+                with RSentenceTransformer(param) as rs_:
+                    res.extend(rs_.retrive(param,
+                               query=query,
+                               print_chunks=print_))
+            else:
                 res.extend(rs.retrive(param,
-                           query=query,
-                           print_chunks=print_))
+                                      query=query,
+                                      print_chunks=print_))
+
             if print_chunks:
                 print("-"*30)
 
@@ -138,13 +145,17 @@ class RPipeLine():
         print("Loaded", len(queries.rag_questions), "questions")
 
         search_result: list[MinimalSearchResults] = []
+
+        rs = RSentenceTransformer(param)
+
         for q in tqdm(queries.rag_questions,
                       desc="Search chunks for Question",
                       unit="Question"):
             chunks_fond = cls.retrive(
                 param=param,
                 query=q.question,
-                print_chunks=False)
+                print_chunks=False,
+                rs=rs)
             search_result.append(MinimalSearchResults(
                 question_id=q.question_id,
                 question=q.question,
@@ -152,6 +163,8 @@ class RPipeLine():
                 retrieved_sources=chunks_fond))
             # print(q.question_id)
             # print(chunks_fond)
+
+        rs.close()
 
         if write_file:
             st_result = StudentSearchResults(k=param.k,

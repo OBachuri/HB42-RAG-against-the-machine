@@ -8,6 +8,7 @@ from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from tqdm import tqdm
+import warnings
 
 from pydantic import TypeAdapter, RootModel
 
@@ -64,8 +65,22 @@ class RSentenceTransformer():
                   ex, file=sys.stderr)
             sys.exit(1)
 
-        # Create persistent Qdrant database
-        self._client = QdrantClient(path=str(file_path))
+        try:
+            # Create persistent Qdrant database
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"Local mode is not recommended for collections "
+                            r"with more than 20,000 points.*",
+                    category=UserWarning,
+                )
+                self._client = QdrantClient(path=str(file_path))
+        except Exception as ex:
+            print(f"Error: can't create/open database {file_path} "
+                  "to store/read vector index! \n",
+                  ex, file=sys.stderr)
+            sys.exit(1)
+
         self._file_path = str(file_path)
 
         # Determine vector dimension
