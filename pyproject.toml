@@ -19,6 +19,8 @@ dependencies = [
 	"torch>=2.0.0",
 	"accelerate",
 	"fire",
+	"fastapi", 
+	"uvicorn",
 #	"huggingface-hub>=0.20.0",
 #	"ast",
     ]

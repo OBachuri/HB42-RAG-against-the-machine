@@ -1,8 +1,8 @@
 
 from pathlib import Path
 import sys
-from pydantic import TypeAdapter, RootModel
-import json
+from pydantic import RootModel
+# import json
 from tqdm import tqdm
 
 
@@ -10,7 +10,7 @@ from src.r_bm25 import r_bm25_retrieve, r_bm25_load
 from src.r_semantic import RSentenceTransformer
 
 from src.r_data_model import RetrieveMode, RagDataset, StudentSearchResults
-from src.r_data_model import MinimalSource, MinimalSearchResults
+from src.r_data_model import RetrievedChunk, MinimalSearchResults
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ class RPipeLine():
                 query: str = "",
                 print_chunks: bool = False,
                 rs: RSentenceTransformer | None = None
-                ) -> list[MinimalSource]:
+                ) -> list[RetrievedChunk]:
 
         RRF_influence_bm25 = 1
         RRF_influence_vector = 0.9
@@ -60,9 +60,12 @@ class RPipeLine():
            or param.retrieve_mode == RetrieveMode.HYBRID):
             if rs is None:
                 with RSentenceTransformer(param) as rs_:
-                    res.extend(rs_.retrive(param,
-                               query=query,
-                               print_chunks=print_))
+                    if rs_:
+                        res.extend(
+                            rs_.retrive(
+                                param,
+                                query=query,
+                                print_chunks=print_))
             else:
                 res.extend(rs.retrive(param,
                                       query=query,
@@ -98,9 +101,9 @@ class RPipeLine():
             res_dic = {v.id: v for v in res if v.id in ids}
             res = [res_dic[i] for i in ids]
             if print_chunks:
-                for i in ids:
-                    c_ = res_dic[i]
-                    score = rrf_scores[i]
+                for i_ in ids:
+                    c_ = res_dic[i_]
+                    score = rrf_scores[i_]
                     if param.print_debug:
                         print(c_.file_path,
                               f"[{c_.first_character_index}:"
@@ -142,6 +145,8 @@ class RPipeLine():
                   file=sys.stderr)
             sys.exit(1)
 
+        file_name = file_path.name
+
         print("Loaded", len(queries.rag_questions), "questions")
 
         search_result: list[MinimalSearchResults] = []
@@ -171,7 +176,7 @@ class RPipeLine():
                                              search_results=search_result)
 
             json_string = RootModel(st_result).model_dump_json(indent=2)
-            file_path = Path(param.save_directory) / "dataset_docs_public.json"
+            file_path = Path(param.save_directory) / file_name
 
             try:
                 # This creates the folders if they do not exist

@@ -6,7 +6,7 @@ from pathlib import Path
 from tqdm import tqdm
 import warnings
 from datetime import datetime, timezone
-from pydantic import TypeAdapter, RootModel
+from pydantic import TypeAdapter   # , RootModel
 
 from sentence_transformers import SentenceTransformer
 
@@ -45,7 +45,7 @@ class RSentenceTransformer():
             2) all-MiniLM-L6-v2
                 - moderate result (256 tokens) but 4 min on embedding
                   (size ~22M)
-            3) intfloat/e5-small-v2 
+            3) intfloat/e5-small-v2
                 - (size ~33M)
             4) nomic-ai/nomic-embed-text-v1.5
                 - (size ~137M)
@@ -66,6 +66,7 @@ class RSentenceTransformer():
 
         # Load embedding model
         self._model = SentenceTransformer(self.model_name)
+        self._client: None | QdrantClient = None
 
         file_path = Path(str(param.data_processed_path)) / Path(INDEX_DIR)
 
@@ -83,9 +84,10 @@ class RSentenceTransformer():
                 warnings.filterwarnings(
                     "ignore",
                     message=r"Local mode is not recommended for collections "
-                            r"with more than 20,000 points.*",
+                            r"with more than*",
                     category=UserWarning,
                 )
+
                 self._client = QdrantClient(path=str(file_path))
         except Exception as ex:
             print(f"Error: can't create/open database {file_path} "
@@ -139,19 +141,23 @@ class RSentenceTransformer():
         if time_last_index is None:
             # There are points in db, but no iformation about last index
             # Deletes all points but keeps your collection schema
-            print("  All existing points deleted.")
-            self._client.delete(
-                collection_name=COLLECTION_NAME,
-                points_selector=Filter()
-            )
+            print("  Qdrant index exist, "
+                  "but it was created with different settings.\n",
+                  "  All existing points must be deleted.")
+            if self._client:
+                self._client.delete(
+                    collection_name=COLLECTION_NAME,
+                    points_selector=Filter()
+                    )
+                print("  Delete complete.")
         else:
-            print("  Incremental indexing (last time indexing:", 
-                    f"({time_last_index} utc)")
+            print("  Incremental indexing (last time indexing:",
+                  f"({time_last_index} utc)")
             c_files: set[str] = set()
 
             # find new file and file with changes
             # Convert string date to a datetime object if needed
-                
+
             source_dir = Path(param.data_raw_path)
 
             # Iterate through all files in the directory - recursive search
@@ -160,32 +166,28 @@ class RSentenceTransformer():
                     # Get the modification time and convert it to a datetime
                     mtime = datetime.fromtimestamp(
                         file_path.stat().st_mtime, timezone.utc)
-                    
                     # Compare dates
                     if mtime > time_last_index:
                         c_files.add(str(file_path))
-
-            # print(c_files)
-
             # delete point for canged files
-            self._client.delete(
-                collection_name=COLLECTION_NAME,
-                points_selector=Filter(
-                    must=[
-                        FieldCondition(
-                            key="file",
-                            # MatchAny acts like an SQL 'IN' clause
-                            match=MatchAny(any=c_files) 
+            if self._client:
+                self._client.delete(
+                    collection_name=COLLECTION_NAME,
+                    points_selector=Filter(
+                        must=[
+                            FieldCondition(
+                                key="file",
+                                # MatchAny acts like an SQL 'IN' clause
+                                match=MatchAny(any=list(c_files))
+                            )
+                                ]
+                            ),
                         )
-                            ]
-                        ),
-                    )
-                # chunks only by chagged files
+            # chunks only by chagged files
             chunks = [ch for ch in chunks if ch.file_path in c_files]
             if c_files:
                 print(f"  {len(c_files)} chunks to update")
 
-                
         file = ""
         source: str = ""
         i = 0
@@ -245,10 +247,13 @@ class RSentenceTransformer():
                       unit=f"batch ({BATCH_SIZE} points)"):
             batch = points[i:i + BATCH_SIZE]
 
-            self._client.upsert(
-                collection_name=COLLECTION_NAME,
-                points=batch,
-            )
+            if self._client:
+                self._client.upsert(
+                    collection_name=COLLECTION_NAME,
+                    points=batch,
+                )
+            else:
+                print("Error - can`t save points")
 
         self.save_index_time(time_)
 
@@ -261,10 +266,13 @@ class RSentenceTransformer():
 
     def check_point_count(self) -> int:
 
-        count = self._client.count(
-            collection_name=COLLECTION_NAME,
-            exact=True,
-        ).count
+        if self._client:
+            count = self._client.count(
+                collection_name=COLLECTION_NAME,
+                exact=True,
+            ).count
+        else:
+            count = 0
 
         # if count:
         #     print(f"Collection contains {count} vectors")
@@ -337,14 +345,15 @@ class RSentenceTransformer():
         # print(res)
         return res
 
-    def save_index_time(self, time_: datetime = datetime.now(timezone.utc)):
+    def save_index_time(self, time_: datetime = datetime.now(timezone.utc)
+                        ) -> None:
         data = {
             "last_indexed": time_.isoformat(),
             "model": self.model_name,
             "max_chunk_size": self.max_chunk_size
         }
 
-        path = Path(self._file_path) / "index_state.json" 
+        path = Path(self._file_path) / "index_state.json"
 
         path.write_text(
             json.dumps(data, indent=2),
@@ -353,12 +362,12 @@ class RSentenceTransformer():
 
     def get_index_time(self) -> None | datetime:
 
-        path = Path(self._file_path) / "index_state.json" 
+        path = Path(self._file_path) / "index_state.json"
 
         if not path.exists():
             return None
 
-        try: 
+        try:
             data = json.loads(
                 path.read_text(encoding="utf-8")
             )
@@ -367,7 +376,7 @@ class RSentenceTransformer():
         model = data.get("model", None)
         max_chunk_size = data.get("max_chunk_size", 0)
         td = data.get("last_indexed", None)
-        if ((td is None) 
+        if ((td is None)
            or not (model == self.model_name)
            or not (max_chunk_size == self.max_chunk_size)):
             return None
@@ -379,19 +388,17 @@ class RSentenceTransformer():
 
         return r_td
 
-
-    def close(self):
+    def close(self) -> None:
         if self._client is not None:
             self._client.close()
             self._client = None
 
-    def __del__(self):
+    def __del__(self) -> None:
         if hasattr(self, "_client"):
             self.close()
 
-    def __enter__(self):
+    def __enter__(self) -> None:
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
         self.close()
-

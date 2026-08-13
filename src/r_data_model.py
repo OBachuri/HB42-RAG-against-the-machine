@@ -119,3 +119,7 @@ class StudentSearchResults(BaseModel):
 class StudentSearchResultsAndAnswer(BaseModel):
     search_results: list[MinimalAnswer]
     k: int
+
+
+class AskRequest(BaseModel):
+    question: str

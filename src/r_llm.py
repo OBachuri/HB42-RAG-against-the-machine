@@ -7,7 +7,7 @@ from threading import Thread
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import TextIteratorStreamer
 
-from src.r_data_model import MinimalSource
+from src.r_data_model import RetrievedChunk
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -44,8 +44,10 @@ class R_LLM():
 
     def query(self,
               question: str,
-              chunks: list[MinimalSource],
-              param: RagCLI) -> str:
+              chunks: list[RetrievedChunk],
+              param: RagCLI,
+              print_answer: bool = True
+              ) -> str:
 
         # read chunks
         chunk_txt = ""
@@ -67,8 +69,8 @@ class R_LLM():
 <chunk
  File: {file}
  Chunk_id_in_file: {chunk_id}
- from: {ch_.first_character_index}
- to: {ch_.last_character_index}
+ from_char: {ch_.first_character_index}
+ to_char: {ch_.last_character_index}
 >
 {source[ch_.first_character_index:ch_.last_character_index+1]}
 </chunk>"""
@@ -92,49 +94,41 @@ class R_LLM():
         model_inputs = self._tokenizer(
             [text], return_tensors="pt").to(self._model.device)
 
-        streamer = TextIteratorStreamer(
-            self._tokenizer,
-            skip_prompt=True,
-            skip_special_tokens=True
-        )
+        if print_answer:
 
-        generation_kwargs = dict(
-            **model_inputs,
-            streamer=streamer,
-            max_new_tokens=4000  # 32768
-        )
+            streamer = TextIteratorStreamer(
+                self._tokenizer,
+                skip_prompt=True,
+                skip_special_tokens=True
+            )
 
-        thread = Thread(target=self._model.generate, kwargs=generation_kwargs)
-        thread.start()
+            generation_kwargs = dict(
+                **model_inputs,
+                streamer=streamer,
+                max_new_tokens=4000  # 32768
+            )
 
-        answer = ""
+            thread = Thread(target=self._model.generate,
+                            kwargs=generation_kwargs)
+            thread.start()
 
-        for chunk in streamer:
-            answer += chunk
-            print(chunk, end="", flush=True)
+            answer = ""
 
-        # # conduct text completion
-        # generated_ids = self._model.generate(
-        #     **model_inputs,
-        #     max_new_tokens=32768,
-        #     use_cache=True
-        # )
-        # output_ids = generated_ids[0][
-        # len(model_inputs.input_ids[0]):].tolist()
+            for chunk in streamer:
+                answer += chunk
+                print(chunk, end="", flush=True)
 
-        # # parsing thinking content
-        # try:
-        #     # rindex finding 151668 (</think>)
-        #     index = len(output_ids) - output_ids[::-1].index(151668)
-        # except ValueError:
-        #     index = 0
+        else:
+            generated_ids = self._model.generate(
+                **model_inputs,
+                max_new_tokens=4000,
+                use_cache=True
+                )
 
-        # thinking_content = self._tokenizer.decode(output_ids[:index],
-        # skip_special_tokens=True).strip("\n")
-        # content = self._tokenizer.decode(output_ids[index:],
-        # skip_special_tokens=True).strip("\n")
+            output_ids = generated_ids[0][
+                len(model_inputs.input_ids[0]):].tolist()
 
-        # print("thinking content:", thinking_content)
-        # print("content:", content)
+            answer = self._tokenizer.decode(output_ids,
+                                            skip_special_tokens=True)
 
         return answer.strip("\n")

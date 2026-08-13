@@ -9,12 +9,12 @@ from pydantic import RootModel
 # path_to_file = os.path.dirname(__file__)
 # sys.path.append(path_to_file)
 
-from src.r_bm25 import r_index_bm25, r_bm25_retrieve, r_bm25_load
-from src.r_bm25 import r_bm25_retrieve_dataset
+from src.r_bm25 import r_index_bm25, r_bm25_load
 from src.r_chunk import r_chunking
 from src.r_llm import R_LLM
 from src.r_semantic import RSentenceTransformer
 from src.r_pipeline import RPipeLine
+from src.r_cache import clear_cache, cache_push, cache_get
 
 from src.r_data_model import MinimalSource, MinimalAnswer
 from src.r_data_model import StudentSearchResultsAndAnswer
@@ -114,10 +114,13 @@ a ground-truth dataset, for testing.
                  eval_IoU: float = 0.05,
                  print_debug: bool = False,
                  llm_model_name: str = "Qwen/Qwen3-0.6B",
-                 retrievemode: RetrieveMode = RetrieveMode.HYBRID
+                 retrievemode: RetrieveMode = RetrieveMode.HYBRID,
+                 cache: bool = False
                  ):
-        self.k = 10
 
+        self.cache = cache
+
+        self.k = 10
         try:
             k_ = int(k)
             if (k_ < 1) or (k_ > 100):
@@ -221,7 +224,9 @@ a ground-truth dataset, for testing.
         self._chunks: list[MinimalSource] = []
         self._c_llm: R_LLM | None = None
 
-    def chunk(self):
+# ------------------------------------------------------------- chunk
+
+    def chunk(self) -> None:
         """
 Splits large text documents into smaller chunks
 
@@ -234,7 +239,9 @@ Splits large text documents into smaller chunks
         # print("Chunking:")
         self._chunks = r_chunking(self)
 
-    def index(self):
+# ------------------------------------------------------------- index
+
+    def index(self) -> None:
         """
 Ingest data/raw/ (--data_raw_path)
 and build the index under data/processed/ (--data_processed_path).
@@ -244,7 +251,10 @@ and build the index under data/processed/ (--data_processed_path).
 """
         if self.print_debug:
             self._print()
-        # print("index---")
+
+        # delete cache
+        clear_cache()
+
         self._chunks = r_chunking(self)
         print("-"*30)
         if (self.retrieve_mode == RetrieveMode.BM25
@@ -254,10 +264,13 @@ and build the index under data/processed/ (--data_processed_path).
         if (self.retrieve_mode == RetrieveMode.EMBEDDINGS
            or self.retrieve_mode == RetrieveMode.HYBRID):
             with RSentenceTransformer(self) as rs:
-                rs.index(self)
+                if rs:
+                    rs.index(self)
             print("-"*30)
 
-    def search(self, query: str):
+    # ----------------------------------------------------------- search
+
+    def search(self, query: str) -> None:
         """
 Return the top-k sources for a single query.
 
@@ -285,7 +298,9 @@ Return the top-k sources for a single query.
                           print_chunks=True
                           )
 
-    def search_dataset(self):
+    # ----------------------------------------------------- search_dataset
+
+    def search_dataset(self) -> None:
         """
 Run search over a whole dataset and write a StudentSearchResults JSON file.
 
@@ -309,7 +324,10 @@ Run search over a whole dataset and write a StudentSearchResults JSON file.
         #     chunks=self._chunks,
         #     write_file=True)
 
-    def answer(self, query: str):
+    # ----------------------------------------------------------- answer
+
+    def answer(self, query: str, _return_value: bool = False
+               ) -> MinimalAnswer | None:
         """
 Answer a single query using the retrieved context.
 
@@ -332,6 +350,17 @@ Answer a single query using the retrieved context.
                   file=sys.stderr)
             sys.exit(1)
 
+        if self.cache:
+            res = cache_get(query, self)
+            if res:
+                print("------------")
+                print("Answer (from cache):")
+                print(res.answer)
+                if _return_value:
+                    return res
+                else:
+                    return None
+
         if self._c_llm is None:
             self._c_llm = R_LLM(self.llm_model_name)
 
@@ -345,15 +374,28 @@ Answer a single query using the retrieved context.
         print("------------")
         print("Answer:")
 
-        # answer_query_txt =
-        self._c_llm.query(
+        answer_txt = self._c_llm.query(
             question=query,
             chunks=chunks_for_RAG,
             param=self)
 
         print("\n------------")
 
-    def answer_dataset(self):
+        res = MinimalAnswer(
+                answer=answer_txt,
+                question=query,
+                question_str=query,
+                question_id="",
+                retrieved_sources=chunks_for_RAG)
+
+        cache_push(res, self)
+
+        if _return_value:
+            return res
+        else:
+            return None
+
+    def answer_dataset(self) -> None:
         """
 Generate answers for a dataset, producing a StudentSearchResultsAndAnswer JSON.
 
@@ -371,11 +413,14 @@ Generate answers for a dataset, producing a StudentSearchResultsAndAnswer JSON.
         if self._c_llm is None:
             self._c_llm = R_LLM(self.llm_model_name)
 
-        ret_res = r_bm25_retrieve_dataset(
-            param=self,
-            retriever=self._retriver,
-            chunks=self._chunks,
-            write_file=False)
+        ret_res = RPipeLine.retrieve_dataset(
+            param=self, write_file=False)
+
+        # ret_res = r_bm25_retrieve_dataset(
+        #     param=self,
+        #     retriever=self._retriver,
+        #     chunks=self._chunks,
+        #     write_file=False)
 
         answer_query_res = []
 
@@ -386,13 +431,14 @@ Generate answers for a dataset, producing a StudentSearchResultsAndAnswer JSON.
             print("\n Question:", q_.question)
             answer_query_res.append(
                 MinimalAnswer(
-                 answer=str(self._c_llm.query(
-                   question=q_.question,
-                   chunks=q_.retrieved_sources,
-                   param=self)),
-                 question_id=q_.question_id,
-                 question=q_.question,
-                 retrieved_sources=q_.retrieved_sources))
+                    answer=str(self._c_llm.query(
+                        question=q_.question,
+                        chunks=q_.retrieved_sources,
+                        param=self)),
+                    question_id=q_.question_id,
+                    question=q_.question,
+                    question_str=q_.question,
+                    retrieved_sources=q_.retrieved_sources))
             print()
 
         print("\n------------")
@@ -402,15 +448,17 @@ Generate answers for a dataset, producing a StudentSearchResultsAndAnswer JSON.
             search_results=answer_query_res)
 
         json_string = RootModel(st_result).model_dump_json(indent=2)
-        file_path = Path(self.save_directory) / (
-            "dataset_docs_public.json")
+
+        file_name = Path(str(self.dataset_path)).name
+
+        file_path = Path(self.save_directory) / file_name
 
         try:
             # This creates the folders if they do not exist
             file_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception as ex:
             print("Error: can't create folder to store"
-                  "dataset_docs_public.json! \n",
+                  f"{file_path}! \n",
                   ex, file=sys.stderr)
             sys.exit(1)
 
@@ -425,7 +473,7 @@ Generate answers for a dataset, producing a StudentSearchResultsAndAnswer JSON.
                   ex, file=sys.stderr)
             sys.exit(1)
 
-    def evaluate(self):
+    def evaluate(self) -> None:
         """
 Report recall@k against a ground-truth dataset, for testing.
 

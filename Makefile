@@ -27,7 +27,11 @@ install:
 	uv sync --python 3
 
 run:
-	uv run python -m src $(ACOMMAND) $(ARGS)
+	# uv run python -m src $(ACOMMAND) $(ARGS)
+	uv run python -m src index
+	uv run python -m src search "How to configure OpenAI server?" --print_debug=True --k=10
+	uv run python -m src answer "How to configure OpenAI server?" --print_debug=True --k=10
+
 
 
 
