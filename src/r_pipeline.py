@@ -11,6 +11,7 @@ from src.r_semantic import RSentenceTransformer
 
 from src.r_data_model import RetrieveMode, RagDataset, StudentSearchResults
 from src.r_data_model import RetrievedChunk, MinimalSearchResults
+from src.r_data_model import MinimalSource
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
 
 
 class RPipeLine():
+    """ Class to work with Hybrid retrieving """
 
     @classmethod
     def retrive(cls,
@@ -27,8 +29,10 @@ class RPipeLine():
                 rs: RSentenceTransformer | None = None
                 ) -> list[RetrievedChunk]:
 
+        """ Retrive chucks for one question """
+
         RRF_influence_bm25 = 1
-        RRF_influence_vector = 0.9
+        RRF_influence_vector = 0.8
         RRF_bm25_min_scope = 0.01
         RRF_k = 60
 
@@ -79,7 +83,7 @@ class RPipeLine():
                 param.k = k
             if print_chunks:
                 print("Hybrid retrieved:")
-            rrf_scores = {}
+            rrf_scores: dict[str, float] = {}
             i = 1
             metod = None
             for r in res:
@@ -123,6 +127,8 @@ class RPipeLine():
                          write_file: bool = True
                          ) -> list[MinimalSearchResults]:
 
+        """ Retrive chucks for questions from dataset """
+
         # Read file with query
         file_path = Path(str(param.dataset_path))
         if not (file_path.is_file() and file_path.stat().st_size > 0):
@@ -161,11 +167,17 @@ class RPipeLine():
                 query=q.question,
                 print_chunks=False,
                 rs=rs)
+
+            minimal_sources = [
+                MinimalSource.model_validate(chunk.model_dump())
+                for chunk in chunks_fond
+                ]
+
             search_result.append(MinimalSearchResults(
                 question_id=q.question_id,
                 question=q.question,
                 question_str=q.question,
-                retrieved_sources=chunks_fond))
+                retrieved_sources=minimal_sources))
             # print(q.question_id)
             # print(chunks_fond)
 

@@ -68,6 +68,8 @@ _MAX_FILE_SIZE = 4 * 1024 * 1024      # 4 MB
 
 
 def _should_skip(path: Path) -> bool:
+    """ Check if file not need to be index """
+
     # Skip directories in the path
     if any(part in _SKIP_DIRS for part in path.parts):
         return True
@@ -84,6 +86,8 @@ def _should_skip(path: Path) -> bool:
 
 
 def get_all_file_paths(directory_path: str | Path) -> list[Path]:
+    """ Get list of all files in folder (recursive) """
+
     base_dir = Path(directory_path).resolve()
     return [
         file.relative_to(base_dir) for file in base_dir.rglob("*")
@@ -116,6 +120,8 @@ def should_index(file: str) -> bool:
 
 def r_get_end_line(start: int, line_offsets: list[int],
                    max_offset: int = 2000, start_line: int = 0) -> int:
+    """ Get char position for the end of chunk """
+
     rez = -1
     for i in range(start_line, len(line_offsets)):
         if line_offsets[i] > start + max_offset:
@@ -395,23 +401,9 @@ def r_chunk_py(file: str,
                               chunk_id=chunk_id,
                               parent_id=parent_id)
                           )
-            # print("---the end of object: chunk id = ", chunk_id,
-            #       "start_char:", start_char,"end_line", end_line_numb)
 
             parent_id = 0
             chunk_id += 1
-
-        # elif len(lines[start_line]) > param.max_chunk_size:
-        #     chunks.extend(r_chunk_txt(file, param,
-        #                               source=lines[start_line],
-        #                               shift=line_offsets[start_line],
-        #                               chunk_id=chunk_id))
-        #     if end_line_numb > start_line:
-        #         parent_id = chunk_id
-        #     chunk_id = chunks[-1].chunk_id + 1
-        #     start_char = line_offsets[start_line] + len(lines[start_line])
-        #     start_line += 1
-        #     continue
 
         else:
             # there should be parser for next level of objects
@@ -433,28 +425,6 @@ def r_chunk_py(file: str,
         start_char = (line_offsets[end_line_numb]
                       + len(lines[end_line_numb]) + 1)
         start_line = end_line_numb + 1
-
-        # print("end_line:", end_line_numb, "id:",
-        # chunk_id, "next_char:", start_char, "obj:", curr_object)
-
-    # print("Top:", top_level)
-
-    # for node in top_level:
-    #     if hasattr(node, "name"):
-    #         parent = getattr(node, "parent", None)
-    #         print("t: l-b",
-    #               node.lineno,
-    #               "sh l-b",
-    #               line_offsets[node.lineno-1],
-    #               node.col_offset,
-    #               "l-e",
-    #               node.end_lineno,
-    #               node.end_col_offset,
-    #               node.name, type(parent).__name__ if parent else None)
-
-    # print("-----code")
-    # code = ast.get_source_segment(source, node)
-    # print(code)
 
     return chunks
 
@@ -482,35 +452,8 @@ def r_chunking(param: RagCLI) -> list[MinimalSource]:
             chunks.extend(r_chunk_txt(str(f_), param))
         else:
             continue
-        #     print(f"{i:4} skip:", size_in_bytes, f_)
 
         f_count += 1
-
-    # print("-"*20)
-    # r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/my-01/data/
-    # raw/vllm-0.10.1/examples/offline_inference/basic/chat.py", param)
-    # print("-"*20)
-    # chunks = r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/
-    # my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py",
-    # param)
-    # print("-"*30, " txt")
-    # # chunks = r_chunk_txt(
-    # "/home/obachuri/avb/Python/RAG-against-the-machine/
-    # my-01/data/raw/vllm-0.10.1/LICENSE", param)
-    # # print(chunks)
-    # # print("-"*30, " txt")
-    # # chunks = r_chunk_txt(
-    # "/home/obachuri/avb/Python/RAG-against-the-machine/
-    # my-01/data/raw/vllm-0.10.1/format.sh", param)
-    # # print(chunk)
-    # chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/
-    # my-01/data/raw/vllm-0.10.1/examples/others/tensorize_vllm_model.py",
-    # param)]
-    # chunks = [r_chunk_py("/home/obachuri/avb/Python/RAG-against-the-machine/
-    # my-01/data/raw/vllm-0.10.1/examples/offline_inference/basic/chat.py",
-    # param)]
-
-    # print(chunks)
 
     print("  Files processed :", f_count)
     print("  Total chunks    :", len(chunks))

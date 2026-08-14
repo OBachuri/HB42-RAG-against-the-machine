@@ -181,6 +181,7 @@ def r_index_bm25(param: RagCLI
 
 def r_bm25_load(param: RagCLI
                 ) -> tuple[bm25s.BM25, list[MinimalSource]]:
+    """ Load index bm25 from folder """
 
     # Path where index data was stored
     index_folder_path = Path(
@@ -238,7 +239,7 @@ def r_bm25_retrieve(param: RagCLI,
                     chunks: list[MinimalSource],
                     query: str = "",
                     print_chunks: bool = False) -> list[RetrievedChunk]:
-    # -------------------------------------
+    """ Retrieve chunks by a query using bm25 index """
 
     if print_chunks:
         print("Retrieved by BM25:")
@@ -296,6 +297,7 @@ def r_bm25_retrieve_dataset(
         retriever: bm25s.BM25,
         chunks: list[MinimalSource],
         write_file: bool = False) -> list[MinimalSearchResults]:
+    """ Retrieve chunks for queries from dataset using bm25 index """
 
     # Read file with query
     file_path = Path(str(param.dataset_path))
@@ -330,13 +332,17 @@ def r_bm25_retrieve_dataset(
             chunks=chunks,
             query=q.question,
             print_chunks=False)
+
+        minimal_sources = [
+            MinimalSource.model_validate(chunk.model_dump())
+            for chunk in chunks_fond
+            ]
+
         search_result.append(MinimalSearchResults(
             question_id=q.question_id,
             question=q.question,
             question_str=q.question,
-            retrieved_sources=chunks_fond))
-        # print(q.question_id)
-        # print(chunks_fond)
+            retrieved_sources=minimal_sources))
 
     if write_file:
         st_result = StudentSearchResults(k=param.k,

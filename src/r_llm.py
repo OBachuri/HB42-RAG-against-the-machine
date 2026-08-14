@@ -6,9 +6,12 @@ from pathlib import Path
 from threading import Thread
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import TextIteratorStreamer
+from transformers import PreTrainedModel
+import torch
 
 from src.r_data_model import RetrievedChunk
 
+from typing import cast, Callable
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.__main__ import RagCLI
@@ -24,8 +27,11 @@ say:
 
 
 class R_LLM():
+    """ Class for work with LLM to get answer on question
+        using retrieved information """
 
     def __init__(self, model_name: str = "Qwen/Qwen3-0.6B"):
+        """ Init LLM model """
 
         self.model_name = model_name
 
@@ -36,7 +42,7 @@ class R_LLM():
 
         # Load the tokenizer and the model
         self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self._model = AutoModelForCausalLM.from_pretrained(
+        self._model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             torch_dtype="auto",
             device_map="auto"
@@ -48,6 +54,7 @@ class R_LLM():
               param: RagCLI,
               print_answer: bool = True
               ) -> str:
+        """ Get answer on one question """
 
         # read chunks
         chunk_txt = ""
@@ -108,7 +115,11 @@ class R_LLM():
                 max_new_tokens=4000  # 32768
             )
 
-            thread = Thread(target=self._model.generate,
+            # for mypy
+            generate_func = cast(Callable[..., torch.Tensor],
+                                 self._model.generate)
+
+            thread = Thread(target=generate_func,
                             kwargs=generation_kwargs)
             thread.start()
 
@@ -119,16 +130,23 @@ class R_LLM():
                 print(chunk, end="", flush=True)
 
         else:
-            generated_ids = self._model.generate(
+            # for mypy
+            generate_func = cast(Callable[..., torch.Tensor],
+                                 self._model.generate)
+            generated_ids_ = generate_func(
                 **model_inputs,
                 max_new_tokens=4000,
                 use_cache=True
                 )
 
-            output_ids = generated_ids[0][
+            # for mypy
+            # generated_ids_ = cast(torch.Tensor, generated_ids)
+
+            output_ids = generated_ids_[0][
                 len(model_inputs.input_ids[0]):].tolist()
 
-            answer = self._tokenizer.decode(output_ids,
-                                            skip_special_tokens=True)
+            answer = cast(str, self._tokenizer.decode(
+                output_ids,
+                skip_special_tokens=True))
 
         return answer.strip("\n")

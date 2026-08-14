@@ -18,6 +18,7 @@ from qdrant_client.models import Filter, FieldCondition, MatchAny
 from src.r_data_model import MinimalSource, RetrievedChunk, RetrieveMode
 from src.r_chunk import r_chunking
 
+from types import TracebackType
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.__main__ import RagCLI
@@ -54,6 +55,8 @@ class RSentenceTransformer():
     """
 
     def __init__(self, param: RagCLI,  model_name: str = 'all-MiniLM-L6-v2'):
+
+        """ Init Semantic embeddings model"""
 
         self.model_name: str = model_name
         self._file_path: str = ""
@@ -285,6 +288,7 @@ class RSentenceTransformer():
                 param: RagCLI,
                 query: str = "",
                 print_chunks: bool = False) -> list[RetrievedChunk]:
+        """ Retrive using Semantic embeddings model """
 
         # Check that index not empty
         if not (self.check_point_count() > 0):
@@ -294,7 +298,7 @@ class RSentenceTransformer():
                   file=sys.stderr)
             sys.exit(1)
 
-        res = []
+        res: list[RetrievedChunk] = []
 
         if print_chunks:
             print(f"Retrieved by {self.model_name}:")
@@ -306,11 +310,14 @@ class RSentenceTransformer():
         ).tolist()
 
         # Search
-        results_points = self._client.query_points(
-                collection_name=COLLECTION_NAME,
-                query=query_vector,
-                limit=param.k,
-            ).points
+        if self._client:
+            results_points = self._client.query_points(
+                    collection_name=COLLECTION_NAME,
+                    query=query_vector,
+                    limit=param.k,
+                ).points
+        else:
+            results_points = []
 
         # print(results)
 
@@ -321,7 +328,7 @@ class RSentenceTransformer():
             if not (data is None):
                 res.append(
                     RetrievedChunk(
-                        id=id,
+                        id=str(id),
                         file_path=data.get("file", ""),
                         first_character_index=data.get("char_from", 0),
                         last_character_index=data.get("char_to", 0),
@@ -397,8 +404,11 @@ class RSentenceTransformer():
         if hasattr(self, "_client"):
             self.close()
 
-    def __enter__(self) -> None:
+    def __enter__(self) -> RSentenceTransformer:
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def __exit__(self,
+                 exc_type: type[BaseException] | None,
+                 exc_value: BaseException | None,
+                 traceback: TracebackType | None) -> None:
         self.close()

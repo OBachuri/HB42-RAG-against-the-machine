@@ -32,8 +32,24 @@ packages = [{ include = "src" }]
 [tool.setuptools]
 package-dir = {"" = "."} 
 
+[dependency-groups]
+dev = [
+    "types-tqdm>=4.70.0.20260805",
+]
+
 [project.scripts]
 index = "src.__main__:main" 
+
+
+[tool.mypy]
+python_version = "3.10" 
+
+[[tool.mypy.overrides]]
+module = [
+    "fire.*",
+	"bm25s.*",
+]
+ignore_missing_imports = true
 
 # [build-system]
 # requires = ["hatchling"]

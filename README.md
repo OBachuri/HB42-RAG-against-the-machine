@@ -8,8 +8,12 @@
 
 ## Description
 
-Retrieval-Augmented Generation 
-Index -> Retrieve -> Generate answer
+A RAG (Retrieval-Augmented Generation) system that answers questions using a large language model (LLM) based on information selected as relevant to the query through index or vector index search.
+
+RAG enables the generation of answers based on up-to-date and/or verified information.
+
+Pipline:
+Dataset -> Ingestion -> Index -> Retrieve -> Generate answer
 
 ## Instructions
 
@@ -86,10 +90,22 @@ Source files
 
 ### Retrieval method
 
+Hybrid retrieval combining BM25 and embeddings using Reciprocal Rank Fusion (RRF).
+
 
 ### Performance analysis
 
+| Dataset | R@1 | R@3 | R@5 | R@10 |
+|---|---|---|---|---|
+| Docs | 61% | 77% | 82% | 85% |
+| Code | 44% | 61% | 70% | 77% |
+
+
 ### Design decisions
+- **BM25S** - for lexical index - fast and easy to work with
+- **all-MiniLM-L6-v2** - for semantic embeddings - other work very slow on CPU
+- **Qdrant**  - for store vector index, FAISS faster but bad for incriment indexing 
+- **FastAPI** - modern, fast (high-performance) web framework for building APIs with Python  
 
 ### Challenges faced
 
@@ -125,11 +141,11 @@ uv run python -m src answer_dataset --student_search_results_path data/output/se
 
 ## Resources
 
+- [BM25S Python library on github](https://github.com/xhluca/bm25s)
 - [Prompt stucture and Control Tokens for Qwen3 LLM](https://qwen.readthedocs.io/en/latest/getting_started/concepts.html)
 - [HuggingFace description for Qwen3-0.6B](https://huggingface.co/Qwen/Qwen3-0.6B)
 - [PyTorch Documentation](https://docs.pytorch.org/docs/stable/index.html)
 - [Pydantic Docs](https://docs.pydantic.dev/latest/)
-- [BM25S Python library on github](https://github.com/xhluca/bm25s)
 
 
 ### AI Usage

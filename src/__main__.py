@@ -18,8 +18,8 @@ from src.r_cache import clear_cache, cache_push, cache_get
 
 from src.r_data_model import MinimalSource, MinimalAnswer
 from src.r_data_model import StudentSearchResultsAndAnswer
-from src.r_data_model import StudentSearchResults, RagDataset
-from src.r_data_model import RetrieveMode
+from src.r_data_model import StudentSearchResults, RagDatasetAnswered
+from src.r_data_model import RetrieveMode, RetrievedChunk
 
 
 commands = {"chunk": "chunk",
@@ -65,7 +65,6 @@ def file_name_compare(file_1: str, file_2: str, dir_: str) -> bool:
 
 def iou(x1_from: int, x1_to: int, x2_from: int, x2_to: int) -> float:
     """ IoU - Intersection over Union
-
 IoU = Area of intersection (overlap) / Areas of union (total combinated area)
     """
     overlap_ = max(0, (min(x1_to, x2_to) - max(x1_from, x2_from) + 1))
@@ -95,6 +94,12 @@ a StudentSearchResultsAndAnswer JSON.
       evaluate            Report your recall@k against \
 a ground-truth dataset, for testing.
 
+  Options:
+     --k                Quantity of chunks to retrieve
+     --max_chunk_size   Max length of a chunk (charachtes)
+     --print_debug      True/False - print additional information
+     --retrievemode     BM25/HYBRID/EMBEDDINGS
+     --cache            True/False - use cache to answer questions
 """
 
     def __init__(self,
@@ -381,12 +386,17 @@ Answer a single query using the retrieved context.
 
         print("\n------------")
 
+        minimal_sources = [
+            MinimalSource.model_validate(chunk.model_dump())
+            for chunk in chunks_for_RAG
+            ]
+
         res = MinimalAnswer(
                 answer=answer_txt,
                 question=query,
                 question_str=query,
                 question_id="",
-                retrieved_sources=chunks_for_RAG)
+                retrieved_sources=minimal_sources)
 
         cache_push(res, self)
 
@@ -394,6 +404,8 @@ Answer a single query using the retrieved context.
             return res
         else:
             return None
+
+# -------------------------------------------------------- answer_dataset
 
     def answer_dataset(self) -> None:
         """
@@ -429,16 +441,28 @@ Generate answers for a dataset, producing a StudentSearchResultsAndAnswer JSON.
              desc="Answer on Question",
              unit="Question"):
             print("\n Question:", q_.question)
+
+            # for mypy
+            minimal_sources = [
+                MinimalSource.model_validate(chunk.model_dump())
+                for chunk in q_.retrieved_sources
+                ]
+            # for mypy
+            retrieve__sources = [
+                RetrievedChunk.model_validate(chunk.model_dump())
+                for chunk in q_.retrieved_sources
+                ]
+
             answer_query_res.append(
                 MinimalAnswer(
                     answer=str(self._c_llm.query(
                         question=q_.question,
-                        chunks=q_.retrieved_sources,
+                        chunks=retrieve__sources,
                         param=self)),
                     question_id=q_.question_id,
                     question=q_.question,
                     question_str=q_.question,
-                    retrieved_sources=q_.retrieved_sources))
+                    retrieved_sources=minimal_sources))
             print()
 
         print("\n------------")
@@ -472,6 +496,8 @@ Generate answers for a dataset, producing a StudentSearchResultsAndAnswer JSON.
                   f"({file_path})\n",
                   ex, file=sys.stderr)
             sys.exit(1)
+
+    # ----------------------------------------------------------- evaluate
 
     def evaluate(self) -> None:
         """
@@ -526,7 +552,7 @@ Report recall@k against a ground-truth dataset, for testing.
                 json_string = q_file.read()
             # Parse and validate the JSON string back into Pydantic objects
             to_reference = RootModel[
-                RagDataset].model_validate_json(json_string).root
+                RagDatasetAnswered].model_validate_json(json_string).root
         except Exception as ex:
             print("Error: Can't read json from file"
                   f"({file_path})\n",

@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, model_validator
 import uuid
 import hashlib
 from enum import Enum
+from typing import Any
 
 
 class RetrieveMode(Enum):
@@ -11,7 +12,8 @@ class RetrieveMode(Enum):
 
 
 class MinimalSource(BaseModel):
-    """ Define one Chunk of text - a link
+    """ Represents a single source of information
+    Define one Chunk of text - a link
     to a specific part of the source file.
     """
 
@@ -60,7 +62,9 @@ class MinimalSource(BaseModel):
 
     @model_validator(mode='before')
     @classmethod
-    def generate_id(cls, data: dict) -> dict:
+    def generate_id(cls, data: dict[Any, Any]) -> dict[Any, Any]:
+        """Check ID and generate new id necessary """
+
         if (isinstance(data, dict)
            and (data.get("id", None) is None)
            or (data.get("id", "") == "")):
@@ -73,27 +77,41 @@ class MinimalSource(BaseModel):
 
 
 class RetrievedChunk(MinimalSource):
+    """ Retrieved Chunk + score """
     score: float = 0
     metod: RetrieveMode | None = None
 
 
 class UnansweredQuestion(BaseModel):
+    """ Represent an unanswered question """
+
     question_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     question: str
 
 
 class AnsweredQuestion(UnansweredQuestion):
+    """ Represent an answered question """
+
     sources: list[MinimalSource]
     answer: str
 
 
+class RagDatasetAnswered(BaseModel):
+    """ List of answered question
+        used by evaluation """
+
+    rag_questions: list[AnsweredQuestion]
+
+
 class RagDataset(BaseModel):
+    """ The RagDataset model represents a dataset of RAG questions """
     rag_questions: list[AnsweredQuestion | UnansweredQuestion]
 
 
 class MinimalSearchResults(BaseModel):
-    """Search results for a single question.
+    """ Search results for a single question.
         form subject v.2.0"""
+
     question_id: str
     question: str
     question_str: str  # added for moulinette = question
@@ -108,18 +126,26 @@ class MinimalSearchResults(BaseModel):
 
 
 class MinimalAnswer(MinimalSearchResults):
+    """ Represent the search results
+    and an answer """
+
     answer: str
 
 
 class StudentSearchResults(BaseModel):
+    """ Represent search results """
+
     search_results: list[MinimalSearchResults]
     k: int
 
 
 class StudentSearchResultsAndAnswer(BaseModel):
+    """ Represent search results  with answers """
+
     search_results: list[MinimalAnswer]
     k: int
 
 
 class AskRequest(BaseModel):
+    """ Used to validate API query"""
     question: str
