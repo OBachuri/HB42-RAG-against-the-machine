@@ -23,6 +23,7 @@ class MinimalSource(BaseModel):
     id: str = ""
     chunk_id: int = 0
     parent_id: int = 0
+    symbol: str = ""
 
     @staticmethod
     def get_chunk_id_SHA256(

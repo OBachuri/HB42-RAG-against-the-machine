@@ -2,11 +2,11 @@
 name = "RAG_against_the_machine"
 version = "0.1.0"
 description = "RAG against the machine - Next step LLMs"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name="Oleksandr Bachurin", email="bachurin_s@yahoo.de" }]
 dependencies = [
 	"pydantic>=2.11.9",
-	"numpy>=1.26",
+	"numpy>=2.4.2",
 	"flake8>=7.0",
 	"mypy>=1.0",
 	"bm25s>=0.2.0",
@@ -15,12 +15,13 @@ dependencies = [
 	"transformers>=4.40.0",
 	"sentence_transformers>=5.7.0",
 	"qdrant-client>=1.19.0",
-	"numpy",
 	"torch>=2.0.0",
-	"accelerate",
-	"fire",
-	"fastapi", 
-	"uvicorn",
+	"accelerate>=1.14.0",
+	"fire>=0.7.1",
+	"fastapi>=0.141.1", 
+	"uvicorn>=0.52.3",
+	"markdown-it-py>=4.2.0",
+	"nltk>=3.10.3",
 #	"huggingface-hub>=0.20.0",
 #	"ast",
     ]
@@ -48,6 +49,7 @@ python_version = "3.10"
 module = [
     "fire.*",
 	"bm25s.*",
+	"nltk.*",
 ]
 ignore_missing_imports = true
 

@@ -10,3 +10,5 @@ mkdir	~/goinfre/venv
 ln -s ~/goinfre/uv ~/.cache/uv
 ln -s ~/goinfre/huggingface ~/.cache/huggingface
 ln -s ~/goinfre/venv .venv
+
+#  uv pip list

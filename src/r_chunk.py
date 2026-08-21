@@ -5,8 +5,12 @@ from pathlib import Path
 from pydantic import RootModel
 from tqdm import tqdm
 
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
+
 from src.r_data_model import MinimalSource
 
+from typing import TypedDict
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.__main__ import RagCLI
@@ -138,7 +142,8 @@ def r_chunk_txt(file: str,
                 shift: int = 0,
                 chunk_id: int = 1,
                 txt_separatos: list[str] = [],
-                parent_id: int = 0
+                parent_id: int = 0,
+                symbol: str = ""
                 ) -> list[MinimalSource]:
     """ Chunk plain text files """
 
@@ -166,6 +171,7 @@ def r_chunk_txt(file: str,
                               first_character_index=start_char + shift,
                               last_character_index=(shift + len(source)-1),
                               parent_id=parent_id,
+                              symbol=symbol,
                               chunk_id=chunk_id)]
 
     if len(txt_separatos) < 1:
@@ -185,6 +191,7 @@ def r_chunk_txt(file: str,
                                   first_character_index=start_char + shift,
                                   last_character_index=end_char + shift,
                                   parent_id=parent_id,
+                                  symbol=symbol,
                                   chunk_id=chunk_id))
             else:
                 end_c = end_char - param.min_chunk_size
@@ -205,6 +212,7 @@ def r_chunk_txt(file: str,
                                   first_character_index=start_char + shift,
                                   last_character_index=end_char + shift,
                                   parent_id=parent_id,
+                                  symbol=symbol,
                                   chunk_id=chunk_id))
 
             # print("-- start:", start_char, "end:",
@@ -229,6 +237,7 @@ def r_chunk_txt(file: str,
                           first_character_index=start_char + shift,
                           last_character_index=index + shift,
                           parent_id=parent_id,
+                          symbol=symbol,
                           chunk_id=chunk_id))
         # print("-- start:", start_char, "index:",
         # index, "len:", index + 1 - start_char)
@@ -239,9 +248,288 @@ def r_chunk_txt(file: str,
     return chunks
 
 
+def r_chunk_md(file: str,
+               param: RagCLI,
+               source: str = "",
+               chunk_id: int = 1,
+               shift: int = 0) -> list[MinimalSource]:
+    """ Chunk Markdown files """
+
+    class Section(TypedDict):
+        id: int
+        p_id: int | None
+        token: Token
+        lines: tuple[int, int]
+        chars: tuple[int, int]
+        txt: str
+
+    def get_symbol(current_section: int) -> str:
+        if ((current_section < 1)
+           or sections_[current_section]["p_id"] is None):
+            return ""
+        s = sections_[current_section]["p_id"]
+        sym_ = ""
+        while not (s is None):
+            sym_ = sections_[s]["txt"] + "\n" + sym_
+            s = sections_[s]["p_id"]
+        return sym_
+
+    def where_stop(start_sect: int, sections_l: list[Section]) -> int:
+        """ Return next sections """
+
+        cc_s = start_sect
+        if (cc_s >= len(sections_l)-1):
+            return cc_s
+        end_c = int(sections_l[cc_s]["chars"][1])
+        p1_id = sections_l[cc_s]["p_id"]
+        while (cc_s < len(sections_l)
+               and (end_c - start_char < param.max_chunk_size)):
+            cc_s += 1
+            while (cc_s < len(sections_l)
+                   and (sections_l[cc_s]["p_id"] != p1_id)):
+                cc_s += 1
+            if cc_s < len(sections_l):
+                end_c = int(sections_l[cc_s]["chars"][1])
+
+        if (cc_s > start_sect) or (cc_s >= len(sections_l) - 1):
+            return cc_s
+
+        cc_s += 1
+        cur_sec_tag = sections_l[start_sect]["token"].tag
+        next_sec_tag = sections_l[cc_s]["token"].tag
+
+        if cur_sec_tag < next_sec_tag:
+            return where_stop(cc_s, sections_l)
+        return cc_s
+
+        # -------------
+
+    chunks: list[MinimalSource] = []
+    start_char = 0
+    start_line = 0
+    current_section = 0
+
+    f_path = Path(param.data_raw_path) / file
+
+    if not source or not source.strip():
+        try:
+            with open(f_path) as f:
+                source = f.read()
+        except Exception as ex:
+            print(f"Error: can't read file {file} \n({ex})", file=sys.stderr)
+            return []
+        chunk_id = 0
+
+    if len(source) <= param.max_chunk_size:
+        return [MinimalSource(file_path=str(f_path),
+                              first_character_index=start_char + shift,
+                              last_character_index=shift+(len(source)-1),
+                              chunk_id=chunk_id)]
+
+    lines = source.splitlines(keepends=True)
+    line_offsets: list[int] = []
+    offset = 0
+    # i = 0
+    for line in lines:
+        line_offsets.append(offset)
+        # print("l-", i, "-", offset, ":", lines[i], end="")
+        offset += len(line)
+        # i += 1
+
+    md = MarkdownIt()
+
+    tokens = md.parse(source)
+
+    # heads = []
+
+    heads = [t for t in tokens if t.type == "heading_open"]
+    sections_: list[Section] = []
+    parent_id: list[int] = []
+
+    for i, h in enumerate(heads):
+        while parent_id and heads[parent_id[-1]].tag >= h.tag:
+            del parent_id[-1]
+        parent_id.append(i)
+
+        if h.map is None:
+            start_l = 0
+            end_l = len(lines)
+        else:
+            start_l = h.map[0]
+            end_l = h.map[1]
+        txt = ("".join(lines[start_l:end_l])).strip()[:200]
+        end_l = len(lines)
+        for next_h in heads[i + 1:]:
+            if next_h.tag <= h.tag:
+                if not (next_h.map is None):
+                    end_l = next_h.map[0]
+                break
+        start_c = line_offsets[start_l]
+        end_c = line_offsets[end_l-1] + len(lines[end_l-1])
+        if len(parent_id) > 1:
+            p_id = parent_id[-2]
+        else:
+            p_id = None
+        sections_.append({"id": i,
+                          "p_id": p_id,
+                          "token": h,
+                          "lines": (start_l, end_l),
+                          "chars": (start_c, end_c),
+                          "txt": txt})
+        # print(i, start_l, end_l, txt, h)
+
+    if len(sections_) < 1:
+        # can't find headers - parse as text
+        return r_chunk_txt(file, param, source=source)
+
+    # print("--- parse as Markdown: file", file)
+
+    # Chek if there is something on the top of the first header
+    # If there a lot - add it in chunks
+    header_start = int(sections_[0]["chars"][0])
+    header_line_end = header_start + len(lines[sections_[0]["lines"][0]])
+
+    if (header_line_end >= max(param.min_chunk_size, param.max_chunk_size // 2)
+       and (header_start >= param.min_chunk_size)):
+        chunks.extend(r_chunk_txt(file, param,
+                                  source=source[0:header_start],
+                                  chunk_id=chunk_id,
+                                  shift=shift
+                                  ))
+        start_char = header_start
+        chunk_id += len(chunks)
+        start_line = int(sections_[0]["lines"][0])
+
+    # # for - test
+    # for s in sections_:
+    #     print(s["id"], s["p_id"], "l:", s["lines"], "c:", s["chars"],
+    #           ",c_len:",
+    #           s["chars"][1]-s["chars"][0],
+    #           s["token"].tag,
+    #           s["txt"])
+
+    current_section = 0
+    while (start_line < len(lines)
+           and start_char < len(source)
+           and chunk_id < 5000):
+
+        # check for the end of the source or end of section
+        if ((len(source) - start_char <= param.max_chunk_size)
+           or current_section >= (len(sections_) - 1)):
+            symbol = get_symbol(current_section)
+            chunks.extend(r_chunk_txt(
+                file, param,
+                source=source[start_char:],
+                chunk_id=chunk_id,
+                shift=shift+start_char,
+                symbol=symbol
+                ))
+            return chunks
+
+        c_s = current_section
+        p_id = sections_[c_s]["p_id"]
+        cur_sec_tag = sections_[c_s]["token"].tag
+        end_c = int(sections_[c_s]["chars"][1])
+
+        while (c_s < len(sections_)
+                and (end_c - start_char < param.max_chunk_size)):
+            c_s += 1
+            while (c_s < len(sections_)
+                   and sections_[c_s]["p_id"] != p_id
+                   and cur_sec_tag < sections_[c_s]["token"].tag):
+                c_s += 1
+            if (c_s < len(sections_)):
+                end_c = int(sections_[c_s]["chars"][1])
+        if c_s > current_section:
+            symbol = get_symbol(current_section)
+            if (c_s < len(sections_)):
+                end_c = int(sections_[c_s]["chars"][0])
+            else:
+                end_c = len(source)-1
+            chunks.append(MinimalSource(
+                file_path=str(f_path),
+                first_character_index=start_char + shift,
+                last_character_index=(shift + end_c - 1),
+                # parent_id=parent_id,
+                symbol=symbol,
+                chunk_id=chunk_id))
+            chunk_id += 1
+            if (c_s >= len(sections_)):
+                return chunks
+            current_section = c_s
+            start_char = end_c
+            start_line = int(sections_[c_s]["lines"][0])
+            continue
+
+        c_s += 1
+        start_c = int(sections_[c_s]["chars"][0])
+        start_l = int(sections_[c_s]["lines"][0])
+
+        if (start_c - start_char + len(lines[start_l]) >= max(
+           param.max_chunk_size // 2, param.min_chunk_size)):
+            symbol = get_symbol(current_section)
+            chunks.extend(r_chunk_txt(
+                file, param,
+                source=source[start_char:start_c],
+                chunk_id=chunk_id,
+                shift=shift+start_char,
+                symbol=symbol
+                ))
+            start_char = start_c
+            chunk_id = chunks[-1].chunk_id + 1
+            start_line = int(sections_[c_s]["lines"][0])
+            current_section = c_s
+            continue
+
+        c_s = where_stop(c_s, sections_)
+
+        if c_s < len(sections_):
+            start_c = int(sections_[c_s]["chars"][0])
+            start_l = int(sections_[c_s]["lines"][0])
+
+            symbol = get_symbol(current_section)
+            chunks.extend(r_chunk_txt(
+                file, param,
+                source=source[start_char:start_c],
+                chunk_id=chunk_id,
+                shift=shift+start_char,
+                symbol=symbol
+                ))
+
+            start_char = start_c
+            chunk_id = chunks[-1].chunk_id + 1
+            start_line = int(sections_[c_s]["lines"][0])
+            current_section = c_s
+        else:
+            current_section = len(sections_) - 1
+
+    #  # -- print(sections_)
+    # for token in tokens:
+    #     if token.type == "heading_open":
+    #         level = int(token.tag[1])  # h1 -> 1, h2 -> 2, ...
+
+    #         headings.append({
+    #             "level": level,
+    #             "map": token.map,
+    #         })
+
+    # for token in tokens:
+    #     print(
+    #         "type:", token.type,
+    #         ", tag:", token.tag,
+    #         ", map:", token.map,
+    #         repr(token.content[:50]), "===="
+    #     )
+    #     print(token)
+    #     print("--------")
+
+    return chunks
+
+
 def r_chunk_py(file: str,
                param: RagCLI,
-               source: str = "", chunk_id: int = 1) -> list[MinimalSource]:
+               source: str = "",
+               chunk_id: int = 1) -> list[MinimalSource]:
     """ Chunk Python files """
 
     start_char = 0
@@ -444,6 +732,9 @@ def r_chunking(param: RagCLI) -> list[MinimalSource]:
             # print(len(c_))
             # chunks.extend(c_)
             chunks.extend(r_chunk_py(str(f_), param))
+        elif extension == '.md':
+            # chunks.extend(r_chunk_txt(str(f_), param))
+            chunks.extend(r_chunk_md(str(f_), param))
         elif extension in _TEXT_SEPARATORS.keys():
             # print(f"{i:4} chunk txt:", size_in_bytes, f_)
             chunks.extend(r_chunk_txt(str(f_), param))

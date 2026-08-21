@@ -6,6 +6,9 @@ import json
 import re
 import bm25s
 from tqdm import tqdm
+import nltk
+from nltk.stem import WordNetLemmatizer
+
 
 from src.r_data_model import MinimalSource, RagDataset  # UnansweredQuestion
 from src.r_data_model import RetrievedChunk, RetrieveMode
@@ -21,17 +24,45 @@ _CAMEL_1 = re.compile(r'([A-Z]+)([A-Z][a-z])')
 _CAMEL_2 = re.compile(r'([a-z0-9])([A-Z])')
 _NUMBER_AFTER = re.compile(r'([A-Za-z])([0-9])')
 _NUMBER_BEFORE = re.compile(r'([0-9])([A-Za-z])')
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+lemmatizer = WordNetLemmatizer()
+
+
+def _ensure_wordnet_nltk() -> None:
+    """ Downloading NLTK resource """
+
+    resources = [
+        ("corpora/wordnet", "wordnet"),
+        ("corpora/omw-1.4", "omw-1.4"),
+    ]
+
+    for path, package in resources:
+        try:
+            nltk.data.find(path)
+        except LookupError:
+            print(f"Downloading NLTK resource: {package}")
+            nltk.download(package)
 
 
 def _get_word_from_text(text: str) -> list[str]:
     """ Prepare text for BM25 indexing. """
 
-    ind_words = _IDENTIFIER.findall(text)
+    if not text:
+        return []
+
+    # ind_words = _IDENTIFIER.findall(text)
 
     # Splitting camelCase Words
     # Example: "myCamelCaseText" becomes "my Camel Case Text".
     # text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", text)
+
+    start_txt = text.lower()
+    start_txt = re.sub(r"[^\w\s-]", " ", start_txt)
+
+    start_words = start_txt.split()
 
     text = _CAMEL_1.sub(r'\1 \2', text)
     text = _CAMEL_2.sub(r'\1 \2', text)
@@ -48,11 +79,22 @@ def _get_word_from_text(text: str) -> list[str]:
     text = re.sub(r"[^\w\s]|[_]", " ", text)
 
     words = text.split()
+    # words = []
 
-    for w in ind_words:
-        s = w.lower().strip()
-        if len(s) > 1 and s not in words:
-            words.append(s)
+    add_words = [w for w in start_words if (
+        (len(w) > 1) and (len(w) < 50) and not (w in words))]
+
+    for word in words:
+        lemma = lemmatizer.lemmatize(word)
+        if lemma != word:
+            add_words.append(lemma)
+
+    words.extend(add_words)
+
+    # for w in ind_words:
+    #     s = w.lower().strip()
+    #     if len(s) > 1 and s not in words:
+    #         words.append(s)
 
     return [w for w in words if (len(w) > 1) and (len(w) < 50)]
 
@@ -75,6 +117,8 @@ def r_index_bm25(param: RagCLI
 
     print("Indexing (BM25):")
 
+    _ensure_wordnet_nltk()
+
     file = ""
     source: str = ""
     corpus = []
@@ -83,8 +127,8 @@ def r_index_bm25(param: RagCLI
     for c_ in tqdm(chunks, desc="Read row data by chunks", unit="chunk"):
         words = []
         if c_.file_path == file:
-            words = _get_word_from_text(
-                source[c_.first_character_index:(c_.last_character_index + 1)])
+            words = _get_word_from_text(source[
+                c_.first_character_index:c_.last_character_index+1])
         else:
             file = c_.file_path
             try:
@@ -92,13 +136,29 @@ def r_index_bm25(param: RagCLI
                 f_path = Path(file)
                 with open(f_path) as f:
                     source = f.read()
-                words = _get_word_from_text(file)
-                words.extend(_get_word_from_text(source[
-                    c_.first_character_index:c_.last_character_index+1]))
+                # words = _get_word_from_text(file)
+                # print(i, words)
+                words = _get_word_from_text(source[
+                    c_.first_character_index:c_.last_character_index+1])
             except Exception as ex:
                 print(f"Error: can't read file {file} \n({ex})",
                       file=sys.stderr)
         if len(words) > 2:
+
+            # f_path_parts = Path(file).parts
+            # Skip the first 3 folders (data/raw/vllm-0.10.1/)
+            # and join the rest back together
+            # new_path = Path(*f_path_parts[3:])
+
+            # www = []
+            # www = _get_word_from_text(file)
+            if c_.symbol:
+                words.extend(_get_word_from_text(c_.symbol))
+                # www.extend(_get_word_from_text(c_.symbol))
+            # words.extend(_get_word_from_text(str(new_path)))
+            words.extend(_get_word_from_text(file))
+            # www.extend(words)
+            # print("===", i, c_.id, c_.file_path, www)
             corpus.append(words)
             # c_.chunk_id = i
             valid_chunks.append(c_)
@@ -118,7 +178,7 @@ def r_index_bm25(param: RagCLI
                   ex, file=sys.stderr)
             sys.exit(1)
 
-        json_string = RootModel(chunks).model_dump_json(indent=2)
+        json_string = RootModel(valid_chunks).model_dump_json(indent=2)
 
         try:
             # Writing the list of chunks to a JSON file
@@ -231,6 +291,8 @@ def r_bm25_load(param: RagCLI
               file=sys.stderr)
         sys.exit(1)
 
+    _ensure_wordnet_nltk()
+
     return (retriever, chunks)
 
 
@@ -248,7 +310,10 @@ def r_bm25_retrieve(param: RagCLI,
     # query = "How to configure OpenAI server?"
     query_tokens = [_get_word_from_text(query)]
     # query_tokens = bm25s.tokenize(query)
-    # print("q:", query_tokens)
+
+    if print_chunks and param.print_debug:
+        print("Query_tokens:", query_tokens)
+        print("Retrieved chunks:")
 
     # Get top-k results as a tuple of (doc ids, scores).
     # Both are arrays of shape (n_queries, k).
@@ -275,11 +340,12 @@ def r_bm25_retrieve(param: RagCLI,
                 score=score))
         if print_chunks:
             if param.print_debug:
-                print(c_.file_path,
+                print(f"{i+1: 3}:",
+                      c_.file_path,
                       f"[{c_.first_character_index}:{c_.last_character_index}]"
                       f" (score: {score:.2f}) id={c_.id}")
             else:
-                print(c_.file_path,
+                print(f"{i+1: 3}:", c_.file_path,
                       f"[{c_.first_character_index}:{c_.last_character_index}]"
                       f" (score: {score:.2f})")
 

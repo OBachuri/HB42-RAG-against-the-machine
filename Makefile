@@ -1,7 +1,6 @@
 .ONESHELL:
 SHELL := /bin/bash
 
-
 RM = rm -fr
 
 VENV_DIR := .cmm-venv
@@ -17,7 +16,7 @@ ARGS := --max_chunk_size 2000 --k=10
 # ARGS := $(wordlist 2, 999, $(MAKECMDGOALS))
 
 help:
-	@echo  "uv run python -m src index"
+	uv run python -m src --help
 
 install:
 #	mkdir -p .cache/uv_cache .cache/hf_cache
@@ -29,11 +28,12 @@ install:
 run:
 	# uv run python -m src $(ACOMMAND) $(ARGS)
 	uv run python -m src index
-	uv run python -m src search "How to configure OpenAI server?" --print_debug=True --k=10
+	# uv run python -m src search "How to configure OpenAI server?" --print_debug=True --k=10
 	uv run python -m src answer "How to configure OpenAI server?" --print_debug=True --k=10
 
-
-
+debug:
+	uv run python -m pdb -m src index
+	uv run python -m pdb -m src answer "How to configure OpenAI server?" --print_debug=True --k=10
 
 clean:
 	@$(RM) .mypy_cache

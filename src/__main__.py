@@ -10,7 +10,7 @@ from pydantic import RootModel
 # sys.path.append(path_to_file)
 
 from src.r_bm25 import r_index_bm25, r_bm25_load
-from src.r_chunk import r_chunking
+from src.r_chunk import r_chunking  # , r_chunk_md
 from src.r_llm import R_LLM
 from src.r_semantic import RSentenceTransformer
 from src.r_pipeline import RPipeLine
@@ -106,7 +106,7 @@ a ground-truth dataset, for testing.
                  k: int = 10,
                  max_chunk_size: int = 2000,
                  min_chunk_size: int = 200,
-                 max_overlap: int = 15,
+                 max_overlap: int = 15,  # 15%
                  data_raw_path: str = "data/raw/",
                  dataset_path: str = (
             "data/datasets/UnansweredQuestions/dataset_docs_public.json"),
@@ -119,7 +119,7 @@ a ground-truth dataset, for testing.
                  eval_IoU: float = 0.05,
                  print_debug: bool = False,
                  llm_model_name: str = "Qwen/Qwen3-0.6B",
-                 retrievemode: RetrieveMode = RetrieveMode.HYBRID,
+                 retrievemode: RetrieveMode = RetrieveMode.BM25,
                  cache: bool = False
                  ):
 
@@ -241,8 +241,22 @@ Splits large text documents into smaller chunks
 """
         if self.print_debug:
             self._print()
-        # print("Chunking:")
+
+        print("Chunking:")
         self._chunks = r_chunking(self)
+
+        # self._chunks = r_chunk_md(
+        #   "vllm-0.10.1/docs/serving/openai_compatible_server.md", self)
+        # i = 0
+        # for c in self._chunks:
+        #     print(i,":",c)
+        #     i += 1
+
+        # self._chunks = r_chunk_md("README.md", self)
+        # i = 0
+        # for c in self._chunks:
+        #     print(i,":",c)
+        #     i += 1
 
 # ------------------------------------------------------------- index
 
@@ -560,8 +574,6 @@ Report recall@k against a ground-truth dataset, for testing.
                   file=sys.stderr)
             sys.exit(1)
 
-        print(f"{BLUE}Data is valid.{RESET}")
-
         print("To eval:", len(to_eval.search_results),
               "queries, For reference:", len(to_reference.rag_questions),
               "queries.")
@@ -569,6 +581,7 @@ Report recall@k against a ground-truth dataset, for testing.
         pass_query = {}
         pass_query[to_eval.k] = 0
 
+        chunk_length_error = False
         for i, q_ref in enumerate(tqdm(to_reference.rag_questions,
                                   desc="Evaliate seach result for query",
                                   unit="query")):
@@ -588,6 +601,16 @@ Report recall@k against a ground-truth dataset, for testing.
 
             ii = 0
             for ei in range(0, len(q_eval.retrieved_sources)):
+                if (q_eval.retrieved_sources[ei].last_character_index
+                   - q_eval.retrieved_sources[ei].first_character_index
+                   >= self.max_chunk_size):
+                    chunk_length_error = True
+                    if self.print_debug:
+                        print(f"\n {RED}ERROR:{RESET} "
+                              "Length of chunk > "
+                              f"{self.max_chunk_size} (n: {i}"
+                              f", id: {q_ref.question_id}):\n", q_ref.question)
+
                 if file_name_compare(
                      q_eval.retrieved_sources[ei].file_path,
                      q_ref.sources[0].file_path, self.data_raw_path):
@@ -610,6 +633,11 @@ Report recall@k against a ground-truth dataset, for testing.
 
         print("Evaluation results:")
         print("="*30)
+        if chunk_length_error:
+            print(f"{RED}Error - exceeding the permissible"
+                  f" length for chunks.{RESET}")
+        else:
+            print(f"{BLUE}Data is valid.{RESET}")
         print("Questions evaluated:", len(to_reference.rag_questions))
         from_starts = 0
         for i in range(1, max(pass_query.keys())+1):

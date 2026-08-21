@@ -157,7 +157,10 @@ class RPipeLine():
 
         search_result: list[MinimalSearchResults] = []
 
-        rs = RSentenceTransformer(param)
+        if param.retrieve_mode == RetrieveMode.BM25:
+            rs = None
+        else:
+            rs = RSentenceTransformer(param)
 
         for q in tqdm(queries.rag_questions,
                       desc="Search chunks for Question",
@@ -181,7 +184,8 @@ class RPipeLine():
             # print(q.question_id)
             # print(chunks_fond)
 
-        rs.close()
+        if rs:
+            rs.close()
 
         if write_file:
             st_result = StudentSearchResults(k=param.k,

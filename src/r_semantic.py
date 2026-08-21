@@ -206,7 +206,7 @@ class RSentenceTransformer():
                     f_path = Path(file)
                     with open(f_path) as f:
                         source = f.read()
-                    words.append(file + " " + source[
+                    words.append(file + "\n " + c_.symbol + "\n " + source[
                         c_.first_character_index:c_.last_character_index+1])
                 except Exception as ex:
                     print(f"Error: can't read file {file} \n({ex})",
@@ -237,8 +237,8 @@ class RSentenceTransformer():
                         "char_from": chunk.first_character_index,
                         "char_to": chunk.last_character_index,
                         "chunk_id": chunk.chunk_id,
-                        "parent_id": chunk.parent_id
-                        # "symbol": chunk["symbol"],
+                        "parent_id": chunk.parent_id,
+                        "symbol": chunk.symbol
                     },
                 )
             )

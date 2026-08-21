@@ -12,14 +12,14 @@ A RAG (Retrieval-Augmented Generation) system that answers questions using a lar
 
 RAG enables the generation of answers based on up-to-date and/or verified information.
 
-Pipline:
+Pipeline:
 Dataset -> Ingestion -> Index -> Retrieve -> Generate answer
 
 ## Instructions
 
 ### Installation
 
-**Python 3.10+** and **uv** must be installed in avance.
+**Python 3.11+** and **uv** must be installed in avance.
 
 ```bash
 make install
@@ -84,7 +84,7 @@ Source files
 
 ### Chunking strategy
 - Python files: AST-aware splitting (top level)
-- Markdown files: Heading-aware recursive splitting (#, ##, ### separators)
+- Markdown files: Hierarchical Greedy Chunking
 - Other as files - index only text file with file-type-specific separators 
 - Maximum chunk size 2000 character (parameter: --max_chunk_size)
 
@@ -97,12 +97,13 @@ Hybrid retrieval combining BM25 and embeddings using Reciprocal Rank Fusion (RRF
 
 | Dataset | R@1 | R@3 | R@5 | R@10 |
 |---|---|---|---|---|
-| Docs | 61% | 77% | 82% | 85% |
-| Code | 44% | 61% | 70% | 77% |
+| Docs | 61% | 77% | 81% | 86% |
+| Code | 44% | 61% | 79% | 86% |
 
 
 ### Design decisions
 - **BM25S** - for lexical index - fast and easy to work with
+- **WordNetLemmatizer** (nltk) - convert words (nouns) from plural to singular before BM25 index
 - **all-MiniLM-L6-v2** - for semantic embeddings - other work very slow on CPU
 - **Qdrant**  - for store vector index, FAISS faster but bad for incriment indexing 
 - **FastAPI** - modern, fast (high-performance) web framework for building APIs with Python  
