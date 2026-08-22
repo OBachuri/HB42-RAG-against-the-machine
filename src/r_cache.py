@@ -1,5 +1,7 @@
 """ Query result caching for search and answer """
 
+from __future__ import annotations
+
 import pathlib
 import shutil
 import hashlib

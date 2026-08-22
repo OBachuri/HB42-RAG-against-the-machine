@@ -1,3 +1,7 @@
+""" bm25 index: create / load / use to retrieval """
+
+from __future__ import annotations
+
 # import argparse
 from pathlib import Path
 import sys

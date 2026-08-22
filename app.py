@@ -1,6 +1,6 @@
 
 from fastapi import FastAPI
-from pydantic import BaseModel
+# from pydantic import BaseModel
 
 from src.__main__ import RagCLI
 from src.r_data_model import AskRequest, MinimalAnswer
@@ -12,6 +12,7 @@ app = FastAPI(
 )
 
 rag = RagCLI()
+rag.cache = True
 
 
 @app.post("/ask", response_model=MinimalAnswer)

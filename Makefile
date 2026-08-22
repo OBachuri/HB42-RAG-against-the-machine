@@ -3,7 +3,7 @@ SHELL := /bin/bash
 
 RM = rm -fr
 
-VENV_DIR := .cmm-venv
+VENV_DIR := .venv
 PYTHON := python3
 PIP := pip
 C_DIR := pwd
@@ -14,6 +14,15 @@ UV := $(shell command -v uv 2>/dev/null)
 ACOMMAND := chunk index search "How to configure OpenAI server?" answer "How to configure OpenAI server?" 
 ARGS := --max_chunk_size 2000 --k=10
 # ARGS := $(wordlist 2, 999, $(MAKECMDGOALS))
+
+define ACTIVATE_VENV
+if [ -z "$$VIRTUAL_ENV" ]; then \
+	echo "No virtual environment detected."; \
+	$(MAKE) venv; \
+	. "$(VENV_DIR)/bin/activate"; \
+fi
+endef
+
 
 help:
 	uv run python -m src --help
@@ -31,9 +40,34 @@ run:
 	# uv run python -m src search "How to configure OpenAI server?" --print_debug=True --k=10
 	uv run python -m src answer "How to configure OpenAI server?" --print_debug=True --k=10
 
+runapi:
+	@echo "Access to the HTTP API: http://127.0.0.1:8000/docs"
+	@$(ACTIVATE_VENV)
+	uvicorn app:app --host 127.0.0.1 --port 8000 --reload
+
 debug:
 	uv run python -m pdb -m src index
 	uv run python -m pdb -m src answer "How to configure OpenAI server?" --print_debug=True --k=10
+
+
+check-venv:
+	@if [ -z "$$VIRTUAL_ENV" ]; then \
+		echo "No virtual environment detected."; \
+		$(MAKE) venv; \
+		. "$(VENV_DIR)/bin/activate"; \
+		echo "Virtual environment in $(VENV_DIR)."; \
+	else \
+		echo "Using virtual environment: $$VIRTUAL_ENV"; \
+	fi
+
+venv:
+	@if [ ! -d "$(VENV_DIR)" ]; then \
+		echo "Creating virtual environment..."; \
+		make install \
+		chmod +x "$(VENV_DIR)/bin/activate" ; \
+	else \
+		echo "Virtual environment already exists."; \
+	fi
 
 clean:
 	@$(RM) .mypy_cache
@@ -67,6 +101,6 @@ lint-strict:
 	uv run mypy src/ --strict --follow-imports=silent
 
 
-.PHONY: install, run, debug, clean, lint, lint-strict fclean
+.PHONY: install run debug clean lint lint-strict fclean runapi check-venv venv
 
 #  ln -s ~/goinfre/uv uv
